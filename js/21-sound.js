@@ -78,6 +78,7 @@ function buildAudioGraph() {
 
 function setMuted(m) {
   audio.muted = m;
+  if (m) stopVoice();
   if (audio.master) audio.master.gain.setTargetAtTime(m ? 0 : 0.9, audio.ctx.currentTime, 0.05);
   syncButtons();
 }
@@ -90,8 +91,9 @@ function updateAudioBeds(dt) {
   const st = STATIONS[sim.state === 'STOPPED' ? sim.station : Math.min(LAST_STATION, sim.station + 1)];
   const near = Math.max(0, 1 - Math.abs(st.dist - sim.dist) / 500) * Math.min(1, sim.people.length / 8) * run;
   const set = (node, v) => node.gain.setTargetAtTime(v, now, 0.15);
-  set(audio.rumble, sp * (0.16 + 0.12 * sim.bridgeMix));
-  set(audio.metal, sp * sim.bridgeMix * 0.05);
+  const under = underMix();                              // a tunnel throws the noise back at you
+  set(audio.rumble, sp * (0.16 + 0.12 * sim.bridgeMix) * (1 + 1.1 * under));
+  set(audio.metal, sp * (sim.bridgeMix * 0.05 + under * 0.025));
   set(audio.boom, sp * sim.bridgeMix * 0.35);
   set(audio.murmur, near * 0.09);
   set(audio.rain, weather.level * 0.16 * run);
@@ -101,8 +103,15 @@ function updateAudioBeds(dt) {
   audio.engSub.frequency.setTargetAtTime(f, now, 0.15);
   audio.engLfo.frequency.setTargetAtTime(f * 1.5, now, 0.15);
   audio.whineF.frequency.setTargetAtTime(f * 1.25, now, 0.15);
-  set(audio.engine, rpm > 0.02 ? 0.03 * vol : 0);
-  set(audio.whine, sim.speed > 0.5 || rpm > 0.35 ? load * (0.25 + 0.75 * Math.min(1, vk * 3)) * 0.022 * vol : 0);
+  if (DIESEL) {                                         // the VLocity: diesels under the floor, throbbing up with the throttle
+    audio.engOsc.frequency.setTargetAtTime(34 + rpm * 62, now, 0.2);
+    set(audio.engine, rpm > 0.02 ? (0.035 + 0.05 * load) * vol : 0);
+    set(audio.whine, sim.speed > 0.5 ? load * 0.006 * vol : 0);
+  } else {
+    audio.engOsc.frequency.setTargetAtTime(100, now, 0.2);
+    set(audio.engine, rpm > 0.02 ? 0.03 * vol : 0);
+    set(audio.whine, sim.speed > 0.5 || rpm > 0.35 ? load * (0.25 + 0.75 * Math.min(1, vk * 3)) * 0.022 * vol : 0);
+  }
   set(audio.squeal, squealLevel() * 0.02 * run);
 }
 
@@ -217,10 +226,16 @@ function tone(t, freq, dur, vol, type = 'sine') {
   o.start(t); o.stop(t + dur + 0.05);
 }
 
-// Pantographs going up: air in the cylinders, and a motor-alternator winding up
+// Pantographs going up: air in the cylinders, and a motor-alternator winding
+// up. A diesel instead: the starter grinding, then the engine catching
 function playCrank() {
   if (!audioOn()) return;
   const ac = audio.ctx, t = ac.currentTime + 0.02, dur = CONFIG.DRIVE.CRANK_TIME;
+  if (DIESEL) {
+    for (let i = 0; i < 9; i++) noiseHit(t + i * 0.13 * (1 - i * 0.05), 0.09, 'lowpass', 300, 0, 0.08);
+    playThump(0.12);
+    return;
+  }
   const o = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
   o.type = 'sawtooth';
   o.frequency.setValueAtTime(60, t);

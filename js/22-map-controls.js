@@ -2,16 +2,18 @@
 'use strict';
 
 // --- route map: the whole line, coloured by landscape, with a little train -
-const MAP = { x: 0, y: 2, w: 150, sprite: null };
+const MAP = { x: 0, y: 2, w: Math.max(150, STATIONS.length * 17), sprite: null };
 function buildMap() {
-  const w = MAP.w, h = 15, [c, g] = makeCanvas(w + 12, h);
+  const w = MAP.w = Math.max(150, STATIONS.length * 17), h = 15, [c, g] = makeCanvas(w + 12, h);
   const d0 = STATIONS[0].dist, d1 = STATIONS[LAST_STATION].dist;
-  const SEC_COL = { city: PALETTE.grayLight, yarra: PALETTE.skyMid, suburbs: PALETTE.orange, foothills: PALETTE.paddy, forest: PALETTE.green };
+  const SEC_COL = { city: PALETTE.grayLight, cbd: PALETTE.grayLight, inner: PALETTE.gray, yarra: PALETTE.skyMid, suburbs: PALETTE.orange,
+                    foothills: PALETTE.paddy, forest: PALETTE.green, industrial: PALETTE.rust, plains: PALETTE.tan, bay: PALETTE.skyDeep,
+                    skyrail: PALETTE.cloudShade };
   rect(g, 0, 0, w + 12, 9, PALETTE.slate);
   rect(g, 1, 1, w + 10, 7, PALETTE.ink);
   for (let i = 0; i <= w; i++) {
-    const tw = terrainAt(d0 + (d1 - d0) * i / w);
-    rect(g, 6 + i, 4, 1, 1, SEC_COL[TERRAIN[bayer(i, 4) < tw.t * 16 ? tw.b : tw.a].id]);
+    const u = d0 + (d1 - d0) * i / w, tw = terrainAt(u);
+    rect(g, 6 + i, 4, 1, 1, inTunnel(u) ? PALETTE.slate : SEC_COL[TERRAIN[bayer(i, 4) < tw.t * 16 ? tw.b : tw.a].id]);   // underground in slate
   }
   for (const st of STATIONS) {
     const x = 6 + Math.round((st.dist - d0) / (d1 - d0) * w);
@@ -32,8 +34,8 @@ function drawMap(g) {
     if (i <= sim.station || (next && Math.floor(sim.clock * 3) & 1)) { g.fillStyle = PALETTE.glow; g.fillRect(x, oy + 4, 1, 1); }
   }
   const tx = ox + Math.round((sim.dist - d0) / (d1 - d0) * MAP.w);
-  g.fillStyle = PALETTE.white; g.fillRect(tx - 5, oy + 2, 6, 2);       // the set
-  g.fillStyle = PALETTE.blue;  g.fillRect(tx, oy + 1, 2, 3);           // cab end
+  g.fillStyle = PALETTE[STYLE.map[0]]; g.fillRect(tx - 5, oy + 2, 6, 2);   // the set, in its livery
+  g.fillStyle = PALETTE[STYLE.map[1]]; g.fillRect(tx, oy + 1, 2, 3);       // cab end
   g.fillStyle = PALETTE.glow;  g.fillRect(tx + 2, oy + 2, 1, 1);       // headlight
 }
 
@@ -56,7 +58,7 @@ function syncButtons() {
   const driving = drive.on && !ui.title;
   let relayout = false;
   for (const b of bar.children) {
-    const hide = b.classList.contains('drv') ? !driving : b.classList.contains('aut') && driving;
+    const hide = b.id === 'b-lines' ? ui.title : b.classList.contains('drv') ? !driving : b.classList.contains('aut') && driving;
     if (b.hidden !== hide) { b.hidden = hide; relayout = true; }
   }
   if (relayout) fit();
@@ -78,9 +80,10 @@ function syncButtons() {
   const live = audio.ctx && audio.ctx.state === 'running';
   set('b-mute', live && !audio.muted ? ICONS.sound : ICONS.mute, !live ? 'TAP' : audio.muted ? 'OFF' : 'ON', live && !audio.muted,
       !live ? 'Turn sound on' : audio.muted ? 'Unmute' : 'Mute');
+  set('b-skip', null, ui.title ? 'LINE' : 'NEXT', false, ui.title ? 'Next line on the departures board' : 'Skip to next station');
   set('b-mode', null, driving ? 'DRIVE' : 'AUTO', driving, driving ? 'Driver mode on: hand back to autopilot' : 'Drive the train yourself');
   const E = drive.engine;
-  set('b-engine', null, E === 'OFF' ? 'RAISE' : E === 'ON' ? 'LOWER' : '...', E === 'ON', E === 'OFF' ? 'Raise the pantograph' : 'Lower the pantograph');
+  set('b-engine', null, E === 'OFF' ? TRACTION.btn[0] : E === 'ON' ? TRACTION.btn[1] : '...', E === 'ON', TRACTION.aria[E === 'OFF' ? 0 : 1]);
   set('b-power', null, null, drive.lever > 0, 'Power up, lever ' + leverLabel(drive.lever));
   set('b-brake', null, null, drive.lever < 0, 'Brake, lever ' + leverLabel(drive.lever));
   const closing = sim.state === 'STOPPED' && (sim.stopPhase === 'BOARDING' || sim.stopPhase === 'BOARDED' || sim.stopPhase === 'DOORS_OPEN');
@@ -90,9 +93,9 @@ function syncButtons() {
 
 const actions = {
   mode() { if (ui.title) beginTrip(true); else setDriveMode(!drive.on); },
-  pause() { ui.paused = !ui.paused; if (ui.paused) hornOff(); },
+  pause() { ui.paused = !ui.paused; if (ui.paused) { hornOff(); stopVoice(); } },
   speed() { ui.speed = SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length]; },
-  skip() { skipToNextStation(); },
+  skip() { if (ui.title) pickLine(ui.lineSel + 1); else skipToNextStation(); },   // on the board: the next line
   time() { ui.timeMode = (ui.timeMode + 1) % TIME_MODES.length; },
   rain() { ui.rainMode = (ui.rainMode + 1) % RAIN_MODES.length; },
   mute() {
@@ -105,9 +108,11 @@ const actions = {
   brake() { setLever(drive.lever - 1); },
   doors() { toggleDoors(); },
   light() { toggleLight(); },
+  lines() { backToBoard(); },
 };
 for (const [id, act] of [['b-mode', 'mode'], ['b-pause', 'pause'], ['b-speed', 'speed'], ['b-skip', 'skip'], ['b-time', 'time'],
-                         ['b-rain', 'rain'], ['b-mute', 'mute'], ['b-engine', 'engine'], ['b-doors', 'doors'], ['b-light', 'light']])
+                         ['b-rain', 'rain'], ['b-mute', 'mute'], ['b-engine', 'engine'], ['b-doors', 'doors'], ['b-light', 'light'],
+                         ['b-lines', 'lines']])
   btn(id).addEventListener('click', () => { unlockAudio(); actions[act](); syncButtons(); });
 
 // Power and brake step once per tap and keep stepping while held; the horn
@@ -144,6 +149,7 @@ const timeScale = () => (ui.paused ? 0 : ui.speed) * (input.fast ? CONFIG.FAST_F
 // Keys on the title card, and the driver's keys; true when the key was used
 function titleKey(key) {
   if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Tab') ui.titleSel ^= 1;
+  else if (key === 'ArrowUp' || key === 'ArrowDown') pickLine(ui.lineSel + (key === 'ArrowUp' ? -1 : 1));
   else if (key === 'Enter' || key === 'Space') beginTrip(ui.titleSel === 1);
   else if (key === 'KeyC') beginTrip(true);
   else return false;
@@ -180,6 +186,8 @@ addEventListener('keydown', e => {
   else if (key === 'KeyP' || (key === 'Space' && !ui.complete)) { actions.pause(); e.preventDefault(); }
   else if (!drive.on && (key === 'Digit1' || key === 'Digit2' || key === 'Digit4')) ui.speed = +key.slice(5);
   else if (key === 'KeyR' || (ui.complete && (key === 'Enter' || key === 'Space'))) startJourney();
+  else if (key === 'Escape' || key === 'Backspace') actions.lines();
+  else if (key === 'KeyG' && ui.complete) returnTrip();          // go back the other way
   syncButtons();
 });
 addEventListener('keyup', e => {
@@ -194,14 +202,17 @@ function toInternal(e) {
   return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height];
 }
 canvas.addEventListener('pointermove', e => {
-  const [x, y] = toInternal(e), t = ui.title ? titleHit(x, y) : -1;
-  if (t >= 0) ui.titleSel = t;
+  const [x, y] = toInternal(e), t = ui.title ? titleHit(x, y) : null;
+  if (t && t.mode !== undefined) ui.titleSel = t.mode;
   ui.hover = buttonHit(x, y);
-  canvas.style.cursor = ui.hover || t >= 0 ? 'pointer' : 'default';
+  canvas.style.cursor = ui.hover || t ? 'pointer' : 'default';
 });
 canvas.addEventListener('pointerdown', e => {
-  const [x, y] = toInternal(e), t = ui.title ? titleHit(x, y) : -1;
-  if (t >= 0) { beginTrip(t === 1); canvas.style.cursor = 'default'; }
-  else if (buttonHit(x, y)) { startJourney(); ui.hover = false; canvas.style.cursor = 'default'; }
+  const [x, y] = toInternal(e), t = ui.title ? titleHit(x, y) : null, b = buttonHit(x, y);
+  if (t && t.mode !== undefined) { beginTrip(t.mode === 1); canvas.style.cursor = 'default'; }
+  else if (t) pickLine(t.line);                                   // a row of the board: show that line
+  else if (b === 1) { startJourney(); ui.hover = false; canvas.style.cursor = 'default'; }
+  else if (b === 2) { returnTrip(); ui.hover = false; canvas.style.cursor = 'default'; }
+  else if (b === 3) { backToBoard(); ui.hover = false; canvas.style.cursor = 'default'; }
   syncButtons();
 });

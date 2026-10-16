@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<canvas id="screen" width="320" height="180" role="img" aria-label="A pixel-art train running from Flinders Street to Belgrave"></canvas>
+<canvas id="screen" width="320" height="180" role="img" aria-label="A pixel-art train journey on a Melbourne train line"></canvas>
 <div id="bar" role="toolbar" aria-label="Train controls">
   <button id="b-mode" type="button" aria-label="Driver mode" title="Drive the train yourself (C)"><svg viewBox="0 0 16 16"><path d="M5 2h6v1h2v2h1v6h-1v2h-2v1H5v-1H3v-2H2V5h1V3h2zM6 4H5v1H4v6h1v1h6v-1h1V5h-1V4zM7 4h2v3H7zM7 7h2v2H7zM4 7h3v1H4zM9 7h3v1H9zM7 9h2v3H7z"/></svg><span>AUTO</span></button>
   <button id="b-engine" type="button" class="drv" hidden aria-label="Raise the pantograph" title="Pantograph up / down (E)"><svg viewBox="0 0 16 16"><path d="M2 2h12v1H2zM4 4h8v1H4zM10 5h1v1h-1zM9 6h1v1H9zM8 7h1v1H8zM7 8h1v1H7zM8 9h1v1H8zM9 10h1v1H9zM10 11h1v1h-1zM3 12h10v2H3z"/></svg><span>RAISE</span></button>
@@ -24,7 +24,9 @@
   <button id="b-time" type="button" class="aut" aria-label="Time of day" title="Time of day (T)"><svg viewBox="0 0 16 16"></svg><span>AUTO</span></button>
   <button id="b-rain" type="button" class="aut" aria-label="Rain" title="Rain (W)"><svg viewBox="0 0 16 16"><path d="M5 2h5v1h2v1h1v2h1v3H1V6h1V4h1V3h2zM3 11h1v2H3zM7 11h1v2H7zM11 11h1v2h-1zM5 13h1v2H5zM9 13h1v2H9z"/></svg><span>AUTO</span></button>
   <button id="b-mute" type="button" aria-label="Sound" title="Sound (M)"><svg viewBox="0 0 16 16"></svg><span>TAP</span></button>
+  <button id="b-lines" type="button" hidden aria-label="Other lines: back to the departures board" title="Departures board (Esc)"><svg viewBox="0 0 16 16"><path d="M1 2h14v12H1zM2 3v10h12V3zM3 4h2v2H3zM6 4h7v2H6zM3 7h2v2H3zM6 7h7v2H6zM3 10h2v2H3zM6 10h7v2H6z"/></svg><span>LINES</span></button>
 </div>
+<script src="js/00-lines.js"></script>
 <script src="js/01-config.js"></script>
 <script src="js/02-route.js"></script>
 <script src="js/03-palette.js"></script>
@@ -36,16 +38,19 @@
 <script src="js/09-scenery-city-yarra.js"></script>
 <script src="js/10-scenery-suburbs.js"></script>
 <script src="js/11-scenery-hills.js"></script>
+<script src="js/11a-scenery-lines.js"></script>
 <script src="js/12-scenery-table.js"></script>
 <script src="js/13-entities.js"></script>
 <script src="js/14-line-crossings.js"></script>
 <script src="js/15-stations.js"></script>
+<script src="js/15b-underground.js"></script>
 <script src="js/16-people.js"></script>
 <script src="js/17-journey.js"></script>
 <script src="js/18-driver.js"></script>
 <script src="js/19-atmosphere.js"></script>
 <script src="js/20-ui.js"></script>
 <script src="js/21-sound.js"></script>
+<script src="js/21b-voice.js"></script>
 <script src="js/22-map-controls.js"></script>
 <script src="js/23-main.js"></script>
 </body>

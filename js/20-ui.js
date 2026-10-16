@@ -15,6 +15,7 @@ function updateUI(dt) {
   const show = next <= LAST_STATION && (sim.state === 'ARRIVING' ||
     ((sim.state === 'TRAVELING' || sim.state === 'DRIVING') && sim.nextStop - sim.dist < 900));
   if (show) ui.bannerSt = next;                           // latched while it slides out
+  if (show && sim.nextStop - sim.dist < 640) announceArrival(next);
   // slides out under the route map (under the driver's panels in DRIVE)
   ui.bannerY += ((show ? (drive.on ? 50 : 19) : -40) - ui.bannerY) * Math.min(1, dt * 5);
   ui.panelY += ((ui.complete ? (drive.final ? 24 : 44) : -150) - ui.panelY) * Math.min(1, dt * 4);
@@ -47,8 +48,10 @@ const PANEL = { w: 172, h: 64 };
 const STAR = ['....x....', '...xxx...', 'xxxxxxxxx', '.xxxxxxx.', '..xxxxx..', '.xxx.xxx.', '.xx...xx.'];
 let panelSprites = null;
 
-function readBest() {
-  try { return +localStorage.getItem('mpt-best') || 0; } catch (e) { return 0; }
+// Best scores are kept per line (Belgrave keeps the key it always had)
+const bestKey = (id = LINE_ID, back = LINE_BACK) => (id === 'belgrave' ? 'mpt-best' : 'mpt-best-' + id) + (back ? '-back' : '');
+function readBest(id) {
+  try { return +localStorage.getItem(bestKey(id)) || 0; } catch (e) { return 0; }
 }
 
 function sizePanel() {
@@ -56,9 +59,13 @@ function sizePanel() {
   PANEL.h = drive.final ? 134 : 64;
 }
 
-function panelButton() {
-  const bw = textWidth('RESTART TRIP') + 12, bh = 11;
-  return { x: (PANEL.w - bw) >> 1, y: PANEL.h - bh - 6, w: bw, h: bh };
+// The panel's two buttons: run the trip again, or back to the board for another line
+// The panel's buttons: run the trip again, ride back the other way, or the board
+const PANEL_LABELS = ['RESTART', 'RETURN TRIP', 'LINES'];
+function panelButtons() {
+  const ws = PANEL_LABELS.map(l => textWidth(l) + 10), bh = 11, gap = 4, y = PANEL.h - bh - 6;
+  let x = (PANEL.w - ws.reduce((a, b) => a + b) - gap * (ws.length - 1)) >> 1;
+  return ws.map((w, i) => { const b = { x, y, w, h: bh, label: PANEL_LABELS[i] }; x += w + gap; return b; });
 }
 
 function buildPanel(hover) {
@@ -90,30 +97,48 @@ function buildPanel(hover) {
     const best = F.record ? 'NEW RECORD!' : 'BEST ' + Math.max(F.best, F.total);
     drawText(g, best, w - 14 - textWidth(best), ty + 13, F.record ? P.glow : P.grayLight);
   }
-  const b = panelButton();
-  rect(g, b.x, b.y, b.w, b.h, P.grassLight);
-  rect(g, b.x + 1, b.y + 1, b.w - 2, b.h - 2, hover ? P.grass : P.green);
-  drawText(g, 'RESTART TRIP', b.x + 6, b.y + 3, P.white);
+  panelButtons().forEach((b, i) => {
+    const [edge, hi, lo] = [[P.grassLight, P.grass, P.green], [P.peach, P.orange, P.rust], [P.skyMid, P.skyDeep, P.blue]][i];
+    rect(g, b.x, b.y, b.w, b.h, edge);
+    rect(g, b.x + 1, b.y + 1, b.w - 2, b.h - 2, hover === i + 1 ? hi : lo);
+    drawText(g, b.label, b.x + 5, b.y + 3, P.white);
+  });
   return c;
 }
 
 function drawPanel(g) {
   const y = Math.round(ui.panelY);
   if (y <= -PANEL.h) return;
-  panelSprites = panelSprites || [buildPanel(false), buildPanel(true)];
-  g.drawImage(panelSprites[ui.hover ? 1 : 0], (W - PANEL.w) >> 1, y);
+  panelSprites = panelSprites || [0, 1, 2, 3].map(buildPanel);
+  g.drawImage(panelSprites[ui.hover || 0], (W - PANEL.w) >> 1, y);
 }
 
+// Which panel button (1 restart, 2 return trip, 3 lines) is at (x, y); 0 for none
 function buttonHit(x, y) {
-  if (!ui.complete) return false;
-  const b = panelButton(), bx = ((W - PANEL.w) >> 1) + b.x, by = Math.round(ui.panelY) + b.y;
-  return x >= bx && x < bx + b.w && y >= by && y < by + b.h;
+  if (!ui.complete) return 0;
+  const bs = panelButtons();
+  for (let i = 0; i < bs.length; i++) {
+    const b = bs[i], bx = ((W - PANEL.w) >> 1) + b.x, by = Math.round(ui.panelY) + b.y;
+    if (x >= bx && x < bx + b.w && y >= by && y < by + b.h) return i + 1;
+  }
+  return 0;
 }
 
-// --- title card: WATCH the journey or DRIVE it ------------------------------
-const TITLE = { w: 208, h: 100, y: 38, sprite: null, best: readBest() };
+// --- the departures board at Flinders Street: pick a line, then WATCH or DRIVE --
+// Up and down move along the board; the picture behind it changes to that
+// line's first platform straight away (loadLine). Left and right pick the mode.
+const TITLE = { w: 300, h: 152, y: 16, sprite: null, best: readBest() };
 const TITLE_OPTS = [['WATCH', 'SIT BACK AND ENJOY'], ['DRIVE', 'YOU ARE THE DRIVER']];
 const TITLE_HITS = TITLE_OPTS.map(() => ({ x: 0, y: 0, w: 80, h: 15 }));
+const ROW_Y0 = 37, ROW_H = 10;
+const LINE_HITS = LINE_IDS.map(() => ({ x: 0, y: 0, w: 0, h: ROW_H }));
+ui.lineSel = LINE_IDS.indexOf(LINE_ID);
+
+// "MERNDA  P1  VIA CITY LOOP" - where each line leaves from, as the board says it
+function boardVia(L) {
+  const away = L.from !== 'FLINDERS STREET' ? 'FROM ' + L.from : '';
+  return [L.via, away].filter(Boolean).join(' - ') || 'STOPS ALL STATIONS';
+}
 
 function buildTitle() {
   const { w, h } = TITLE, [c, g] = makeCanvas(w, h), P = PALETTE;
@@ -121,37 +146,62 @@ function buildTitle() {
   rect(g, 1, 1, w - 2, h - 2, P.ink);
   rect(g, 1, h - 2, w - 2, 1, P.skyDeep);
   const t = 'MELBOURNE PIXEL TRAIN';
-  drawText2x(g, t, (w - t.length * 8 + 2) >> 1, 6, P.glow);
-  const sub = 'FLINDERS STREET TO BELGRAVE  ' + Math.round(STATIONS[LAST_STATION].km) + ' KM';
-  drawText(g, sub, (w - textWidth(sub)) >> 1, 22, P.white);
-  const route = STATIONS.map(s => s.code).join(' ');
-  drawText(g, route, (w - textWidth(route)) >> 1, 33, P.grayLight);
-  const keys = 'E PANTO  ↑↓ LEVER  O DOORS  H HORN  L LIGHT';
-  drawText(g, keys, (w - textWidth(keys)) >> 1, h - 19, P.slate);
-  const foot = '←→ CHOOSE   ENTER START' + (TITLE.best ? '   BEST ' + TITLE.best : '');
-  drawText(g, foot, (w - textWidth(foot)) >> 1, h - 11, P.grayLight);
+  drawText2x(g, t, (w - t.length * 8 + 2) >> 1, 5, P.glow);
+  drawText(g, 'DEPARTURES', 10, 21, P.white);
+  const sub = 'FLINDERS STREET';
+  drawText(g, sub, w - 10 - textWidth(sub), 21, P.grayLight);
+  rect(g, 8, 27, w - 16, 1, P.slate);
+  drawText(g, 'TIME', 16, 30, P.gray); drawText(g, 'DESTINATION', 44, 30, P.gray);
+  drawText(g, 'PLAT', 112, 30, P.gray); drawText(g, 'SERVICE', 136, 30, P.gray);
+  LINE_IDS.forEach((id, i) => {
+    const L = LINES[id], y = ROW_Y0 + i * ROW_H;
+    rect(g, 9, y, 3, ROW_H - 2, L.color);                                         // the line's colour
+    drawText(g, hhmm(L.clock[0]), 16, y + 2, PALETTE.amber);
+    drawText(g, L.name, 44, y + 2, P.white);
+    drawText(g, String(L.platform), 116, y + 2, P.white);
+    drawText(g, boardVia(L), 136, y + 2, P.grayLight);
+  });
+  const keys = '↑↓ LINE   ←→ WATCH OR DRIVE   ENTER GO';
+  drawText(g, keys, 10, h - 9, P.gray);
   return c;
 }
 
 function drawTitle(g) {
   const x0 = (W - TITLE.w) >> 1, y0 = TITLE.y, P = PALETTE;
   g.drawImage(TITLE.sprite || (TITLE.sprite = buildTitle()), x0, y0);
+  LINE_IDS.forEach((id, i) => {                                                   // the chosen line, picked out
+    const r = LINE_HITS[i];
+    r.x = x0 + 6; r.y = y0 + ROW_Y0 + i * ROW_H - 1; r.w = TITLE.w - 12;
+    if (i !== ui.lineSel) return;
+    rect(g, r.x, r.y, r.w, 1, P.glow); rect(g, r.x, r.y + ROW_H - 1, r.w, 1, P.glow);
+    if (Math.floor(sim.clock * 2) & 1) drawText(g, '>', x0 + TITLE.w - 12, r.y + 3, P.glow);
+  });
+  const by = y0 + ROW_Y0 + LINE_IDS.length * ROW_H + 3;
   for (let i = 0; i < TITLE_OPTS.length; i++) {
     const [label, sub] = TITLE_OPTS[i], r = TITLE_HITS[i], sel = ui.titleSel === i;
-    r.x = x0 + 16 + i * 96; r.y = y0 + 48;
+    r.x = x0 + 62 + i * 96; r.y = by;
     rect(g, r.x, r.y, r.w, r.h, sel ? P.glow : P.slate);
     rect(g, r.x + 1, r.y + 1, r.w - 2, r.h - 2, sel ? (i ? P.green : P.blue) : P.navy);
     drawText2x(g, label, r.x + ((r.w - label.length * 8 + 2) >> 1), r.y + 3, sel ? P.white : P.grayLight);
     drawText(g, sub, r.x + ((r.w - textWidth(sub)) >> 1), r.y + 19, sel ? P.white : P.gray);
   }
+  const fc = 'FORECAST: ' + weather.day.name;                                  // today's weather for this trip
+  drawText(g, fc, x0 + ((TITLE.w - textWidth(fc)) >> 1), y0 + 21, weather.day.name === 'FINE' ? P.glow : P.skyLight);
+  if (TITLE.best) { const b = 'BEST ' + TITLE.best; drawText(g, b, x0 + TITLE.w - 10 - textWidth(b), y0 + TITLE.h - 9, P.glow); }
 }
 
+// What a pointer at (x, y) is over: { line: i } or { mode: i }, or null
 function titleHit(x, y) {
-  for (let i = 0; i < TITLE_HITS.length; i++) {
-    const r = TITLE_HITS[i];
-    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
-  }
-  return -1;
+  const inside = r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+  for (let i = 0; i < TITLE_HITS.length; i++) if (inside(TITLE_HITS[i])) return { mode: i };
+  for (let i = 0; i < LINE_HITS.length; i++) if (inside(LINE_HITS[i])) return { line: i };
+  return null;
+}
+
+// Move along the board, and show that line behind it
+function pickLine(i) {
+  ui.lineSel = (i + LINE_IDS.length) % LINE_IDS.length;
+  loadLine(LINE_IDS[ui.lineSel]);
 }
 
 // Leave the title card: AUTO raises the pantographs and sets off;
@@ -162,6 +212,30 @@ function beginTrip(driving) {
   if (driving) { setDriveMode(true); resetDrive(); }
   else if (drive.engine === 'OFF') startEngine();
   syncButtons();
+  announceDeparture();
+}
+
+// Back to the departures board, the train waiting at the first platform
+function backToBoard() {
+  if (ui.title) return;
+  hornOff();
+  stopVoice();
+  drive.on = false;
+  setEngine('OFF'); drive.rpm = 0;
+  ui.title = true; ui.paused = false; ui.speed = 1;
+  if (LINE_BACK) loadLine(LINE_ID, false);                // the board's trains all leave the city
+  startJourney();
+  syncButtons();
+}
+
+// From the end of the line, ride back the other way: same mode, a fresh trip
+function returnTrip() {
+  if (!ui.complete) return;
+  hornOff();
+  loadLine(LINE_ID, !LINE_BACK);
+  if (!drive.on && drive.engine === 'OFF') startEngine();
+  syncButtons();
+  announceDeparture();
 }
 
 // --- DRIVE mode: the driver's panels, the next-step hint, messages ----------
@@ -192,8 +266,9 @@ function drawDriveHUD(g) {
   }
   textRight(g, leverLabel(l), x + 73, ly, l === EB ? P.red : P.white);
   const ey = y + 28;
-  drawText(g, 'PAN', x + 4, ey, P.grayLight);
-  drawText(g, E === 'OFF' ? 'DOWN' : E === 'ON' ? 'UP' : E === 'CRANK' ? 'RISE' : 'DROP', x + 20, ey,
+  const T = TRACTION.states;
+  drawText(g, TRACTION.hud, x + 4, ey, P.grayLight);
+  drawText(g, E === 'OFF' ? T[0] : E === 'ON' ? T[1] : E === 'CRANK' ? T[2] : T[3], x + 20, ey,
            E === 'OFF' ? P.red : E === 'ON' ? P.grassLight : blink ? P.amber : P.peach);
   rect(g, x + 44, ey, 29, 5, P.navy);
   rect(g, x + 44, ey, Math.round(29 * drive.rpm), 5, drive.rpm > 0.85 ? P.orange : P.green);
@@ -289,6 +364,7 @@ function drawDebug(g) {
     (stopped ? 'AT    ' : 'NEXT  ') + st.en,
     stopped ? 'PEOPLE ' + sim.people.length : 'IN    ' + Math.ceil(sim.nextStop - sim.dist) + ' PX',
     'LIGHT ' + hhmm(sim.hour) + ' ' + TIME_MODES[ui.timeMode][0] + (weather.level > 0.05 ? ' RAIN ' + Math.round(weather.level * 100) : ''),
+    'SKY   ' + weather.day.name + (weather.storm ? ' STORM' : '') + ' WIND ' + Math.round(weather.wind),
     'LAND  ' + landLabel() + (sim.onBridge ? ' BRIDGE' : ''),
   ];
   if (drive.on) lines.push('DRIVE ' + drive.engine + ' ' + leverLabel(drive.lever) + ' LOAD ' + Math.round(drive.rpm * 100) +

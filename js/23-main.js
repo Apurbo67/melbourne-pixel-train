@@ -19,12 +19,39 @@ for (let level = 0; level <= 16; level++) {
   DITHER_MASKS.push(bctx.createPattern(c, 'repeat'));
 }
 
+const VARIANTS = {};
+function buildVariants() {
+  for (const k in VARIANTS) delete VARIANTS[k];
+  for (const k of ['day', 'dusk', 'night']) VARIANTS[k] = buildVariant(k);
+  if (TUNNELS.length) VARIANTS.under = buildVariant('under');
+}
 buildTerrain();
 buildSchedule();
-const VARIANTS = { day: buildVariant('day'), dusk: buildVariant('dusk'), night: buildVariant('night') };
+buildVariants();
+
+// Switch to another line, or the other way along this one, while the page
+// runs (the departures board and the end-of-trip panel do this):
+// everything built from the line is built again, and the train goes to
+// the first station
+function loadLine(id, back = false) {
+  if (!LINES[id] || (id === LINE_ID && back === LINE_BACK)) return;
+  LINE_ID = id; LINE_BACK = back; LINE = runLine(id, back);
+  CONFIG.CLOCK_START = LINE.clock[0]; CONFIG.CLOCK_END = LINE.clock[1];
+  CONFIG.HOUR_START = LINE.hours[0]; CONFIG.HOUR_END = LINE.hours[1];
+  sim.hour = CONFIG.HOUR_START;
+  readLine(); trainStyle(); nameSections(); buildStations();
+  buildTerrain();
+  SCHEDULE.length = 0; buildSchedule();
+  buildVariants();
+  bannerCache.length = 0; MAP.sprite = null; panelSprites = null; TITLE.best = readBest(); sky.key = -1;
+  startJourney();
+  canvas.setAttribute('aria-label', 'A pixel-art train journey on the ' + LINE.name.toLowerCase() + ' line');
+  try { history.replaceState(null, '', '?line=' + id + (back ? '&dir=back' : '') + location.hash); } catch (e) { /* file:// */ }
+}
 
 // Everything that belongs to the landscape and lighting variant v. The sky
 // is drawn once beforehand; this is drawn twice while two lightings blend.
+const underDeck = (g, v) => { drawReflection(g, v); drawTrestle(g, v); };
 function renderWorld(g, v) {
   const d = sim.dist;
   drawTiled(g, v.clouds, d * PARALLAX.clouds + sim.cloudDrift, LAYER_Y.clouds);   // 2. clouds
@@ -33,18 +60,43 @@ function renderWorld(g, v) {
   drawTerrain(g, v, TL.far);                                              // 3. distant land
   drawTerrain(g, v, TL.mid);                                              // 4. streets, river, paddocks, forest
   drawBackdrops(g, v, 'mid');                                             //    Flinders Street Station
+  drawPortals(g, v);                                                      //    the banks over the tunnel mouths
   drawBirds(g, v);
+  drawStationBack(g, v);                                                  //    Southern Cross's columns
   drawLine(g, v);                                                         // 5. masts, wire, track, bridge
   drawCrossingBack(g, v);
   drawTrain(g, v);
   drawTruss(g, v, true);                                                  //    lattice over the train
-  drawTerrain(g, v, TL.fg, drawReflection);                               // 6. near ground / water
+  drawTerrain(g, v, TL.fg, underDeck);                                     // 6. near ground / water, the trestle's legs
   drawCrossingFront(g, v);
   drawStationFront(g, v);                                                 //    platform, people
   drawFluff(g, v);
 }
 
 function render() {
+  const U = underSpans();
+  renderOutside();                                                       // (the street and sky stay over a tunnel too)
+  ctx.setTransform(1, 0, 0, 1, shake.x, shake.y);
+  if (U.any) {                                                           // 9. the tunnel, cut away
+    for (const [a, b] of U.tube) renderUnder(ctx, a, b, null);
+    for (const [a, b, st] of U.vault) renderUnder(ctx, a, b, st);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const driving = drive.on && !ui.title;
+  ui.debugW = 0;
+  if (driving) drawPopups(ctx);
+  drawMap(ctx);
+  if (driving) { drawDriveHUD(ctx); drawHint(ctx); }
+  if (input.debug) drawDebug(ctx);
+  drawBanner(ctx);
+  if (driving) drawToasts(ctx);
+  drawPanel(ctx);
+  if (ui.title) drawTitle(ctx);
+  else if (driving && ui.paused) drawPaused(ctx);
+}
+
+// Everything in the open air: sky, landscape, train, weather, lighting
+function renderOutside() {
   updateSky(ctx);
   placeCelestial();
   ctx.setTransform(1, 0, 0, 1, shake.x, shake.y);
@@ -73,18 +125,6 @@ function render() {
   drawRain(ctx);
   applyTint(ctx);                                                        // 7. time-of-day colour
   drawGlow(ctx);                                                         // 8. lamps, windows, sparks
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const driving = drive.on && !ui.title;
-  ui.debugW = 0;
-  if (driving) drawPopups(ctx);
-  drawMap(ctx);
-  if (driving) { drawDriveHUD(ctx); drawHint(ctx); }
-  if (input.debug) drawDebug(ctx);
-  drawBanner(ctx);
-  if (driving) drawToasts(ctx);
-  drawPanel(ctx);
-  if (ui.title) drawTitle(ctx);
-  else if (driving && ui.paused) drawPaused(ctx);
 }
 
 // Paint terrain chunks (and the sprites standing on them) a little before
