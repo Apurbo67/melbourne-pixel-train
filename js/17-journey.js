@@ -48,6 +48,7 @@ function setState(s) {
     sim.segDur = Math.max(0.2, 2 * (sim.nextStop - sim.dist) / Math.max(1, sim.speed));
   } else if (s === 'DEPARTING') {
     sim.shake = 1.6;                                     // couplings snatch as the train pulls away
+    announceNext(sim.station);
   } else if (s === 'STOPPED') {
     sim.speed = 0;
     setStopPhase('SETTLE');
@@ -120,7 +121,7 @@ function updateStop(dt) {
   }
 }
 
-// Back to Flinders Street with a fresh crowd
+// Back to the first station with a fresh crowd
 function startJourney() {
   for (const q of sim.people) forgetPerson(q);
   sim.people.length = 0;
@@ -128,10 +129,11 @@ function startJourney() {
   birdPool.n = fluffPool.n = sparkPool.n = 0;
   for (const c of CROSSINGS) c.tooted = false;
   sim.fxRng = mulberry32(2024);
-  sim.wxRng = mulberry32(1854);
+  sim.wxRng = mulberry32(tripSeed());                  // the weather: different every trip (see WEATHER_DAYS)
   resetWeather();
   sim.hornTimer = 8;
   sim.doorOpen = 0;
+  stopVoice(); voice.near = -1;
   arrive(0, 0);
   resetDrive();
   ui.complete = false;

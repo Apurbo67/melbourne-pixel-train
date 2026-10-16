@@ -44,7 +44,7 @@ function nightAt(h) {
   return 1;
 }
 
-const hhmm = h => { const m = Math.floor(h * 60) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+const hhmm = h => { const m = Math.floor(h * 60 + 1e-6) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 
 // Interpolate a table of [hour, ...hex colours] rows into out (RGB floats)
 function hexRgbF(hex) { const [r, g, b] = hexToRgb(hex); return [r, g, b]; }
@@ -337,23 +337,55 @@ function updateShake(dt) {
 }
 
 // --- weather: passing showers, splashes, ripples, the odd rumble of thunder -----
-const weather = { level: 0, target: 0, timer: 0, acc: 0, flash: 0, flashT: 9, bolt: new Int16Array(24), boltN: 0, thunderIn: -1 };
+// Every trip draws a kind of day, then its showers come and go at random:
+//   gap / spell   s of dry weather between showers, s a shower lasts
+//   level         how hard it rains; storm: the chance a shower brings lightning
+//   wet           the chance the trip starts in the rain; wind: how hard it blows
+const WEATHER_DAYS = [
+  { name: 'FINE',      weight: 3, gap: [90, 200], spell: [6, 14],  level: [0.25, 0.5], storm: 0,    wet: 0,    wind: [10, 25] },
+  { name: 'SHOWERS',   weight: 4, gap: [25, 70],  spell: [12, 30], level: [0.5, 1],    storm: 0.25, wet: 0.25, wind: [20, 45] },
+  { name: 'DRIZZLE',   weight: 2, gap: [10, 30],  spell: [35, 80], level: [0.3, 0.5],  storm: 0,    wet: 0.7,  wind: [8, 20] },
+  { name: 'STORMS',    weight: 2, gap: [20, 45],  spell: [20, 45], level: [0.8, 1],    storm: 1,    wet: 0.4,  wind: [35, 70] },
+];
+const weather = { level: 0, target: 0, timer: 0, acc: 0, flash: 0, flashT: 9, bolt: new Int16Array(24), boltN: 0, thunderIn: -1,
+                  day: WEATHER_DAYS[0], storm: false, wind: 30 };
+const between = (rng, [a, b]) => a + rng() * (b - a);
+
+// A fresh draw every trip; ?seed=N fixes it
+const SEED = PARAMS.get('seed') !== null && PARAMS.get('seed') !== undefined ? +PARAMS.get('seed') | 0 : null;
+const tripSeed = () => SEED !== null ? SEED : (Math.random() * 2147483647) | 0;
 const rainPool = makePool(CONFIG.RAIN_MAX[0], () => ({ x: 0, y: 0, vx: 0, vy: 0, depth: 0, gy: 0 }));
 const splashPool = makePool(CONFIG.SPLASH_MAX[0], () => ({ x: 0, y: 0, age: 0, water: false }));
 
 function resetWeather() {
-  weather.level = weather.target = 0;
-  weather.timer = CONFIG.RAIN_GAP[1] * 0.6;            // dry at Flinders Street; the first shower comes on the way
+  const rng = sim.wxRng, total = WEATHER_DAYS.reduce((a, d) => a + d.weight, 0);
+  let r = rng() * total, day = WEATHER_DAYS[0];
+  for (const d of WEATHER_DAYS) if ((r -= d.weight) < 0) { day = d; break; }
+  weather.day = day;
+  weather.wind = between(rng, day.wind);
+  weather.storm = false;
+  weather.target = 0;
+  if (rng() < day.wet) newSpell(rng);                   // already raining as the trip begins
+  else weather.timer = between(rng, day.gap) * (0.2 + rng() * 0.8);
+  weather.level = weather.target;
+  weather.drawn = [day.name, Math.round(weather.timer * 10), Math.round(weather.wind)];   // what this trip got (for the tests)
   weather.flash = 0; weather.flashT = 9; weather.thunderIn = -1;
   rainPool.n = splashPool.n = 0;
+}
+
+function newSpell(rng) {
+  const d = weather.day;
+  weather.target = between(rng, d.level);
+  weather.timer = between(rng, d.spell);
+  weather.storm = rng() < d.storm;
+  weather.wind = Math.max(5, weather.wind + (rng() - 0.5) * 20);   // the wind picks up or drops with each shower
 }
 
 function updateWeather(dt) {
   const rng = sim.wxRng;
   if ((weather.timer -= dt) <= 0) {                     // next spell, or the end of this one
-    const raining = weather.target > 0;
-    weather.target = raining ? 0 : 0.55 + rng() * 0.45;
-    weather.timer = raining ? randInt(rng, ...CONFIG.RAIN_GAP) : randInt(rng, ...CONFIG.RAIN_SPELL);
+    if (weather.target > 0) { weather.target = 0; weather.storm = false; weather.timer = between(rng, weather.day.gap); }
+    else newSpell(rng);
   }
   const target = ui.rainMode === 1 ? 1 : ui.rainMode === 2 ? 0 : weather.target;
   weather.level += Math.max(-0.2 * dt, Math.min(0.2 * dt, target - weather.level));
@@ -371,7 +403,7 @@ function updateWeather(dt) {
   }
   for (let i = 0; i < rainPool.n; ) {
     const r = rainPool.items[i];
-    r.vx = -(sim.speed * r.depth * 0.8) - 30 * r.depth;  // wind plus the train's own speed
+    r.vx = -(sim.speed * r.depth * 0.8) - weather.wind * r.depth;   // wind plus the train's own speed
     r.x += r.vx * dt;
     r.y += r.vy * dt;
     if (r.y < r.gy && r.x > -12) { i++; continue; }
@@ -390,7 +422,7 @@ function updateWeather(dt) {
   }
 
   // rare, distant lightning while it pours; thunder follows a moment later
-  if (weather.level > 0.5 && rng() < CONFIG.LIGHTNING_RATE * weather.level * dt) {
+  if ((weather.storm || ui.rainMode === 1) && weather.level > 0.5 && rng() < CONFIG.LIGHTNING_RATE * weather.level * dt) {
     weather.flashT = 0;
     let x = randInt(rng, 30, W - 30), y = randInt(rng, 6, 30);
     weather.boltN = 0;
@@ -410,12 +442,14 @@ function updateWeather(dt) {
 function isWater(x, y) {
   const u = sim.dist + (x - ANCHOR_X) / PARALLAX.fg, ly = y - LAYER_Y.fg;
   if (ly >= 12 && yarraWet(u, yarraPad(ly))) return true;
-  const D = TL.fg.data.foothills;
-  if (!D || !D.ponds) return false;
   const lx = x + Math.floor(sim.dist * PARALLAX.fg);
-  for (let i = 0; i < D.ponds.length; i++) {
-    const pd = D.ponds[i];
-    if (Math.abs(lx - pd.cx) <= pd.rx) { const k = pondPixel(pd, lx, ly); return k !== null && k.charCodeAt(0) === 115; }   // 's'ky...
+  for (const k in TL.fg.data) {
+    const D = TL.fg.data[k];
+    if (!D || !D.ponds) continue;
+    for (let i = 0; i < D.ponds.length; i++) {
+      const pd = D.ponds[i];
+      if (Math.abs(lx - pd.cx) <= pd.rx) { const c = pondPixel(pd, lx, ly); return c !== null && c.charCodeAt(0) === 115; }   // 's'ky...
+    }
   }
   return false;
 }
