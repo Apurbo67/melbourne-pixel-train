@@ -14,16 +14,22 @@ const ROOFS = {
   heritage: { y0: 82, h: 11, pillarTop: 90 },            // Flinders Street: iron verandahs with a timber valance
   canopy:   { y0: 86, h: 7, pillarTop: 93, span: [30, 258] },
   shelter:  { y0: 93, h: 7, pillarTop: 100, span: [186, 266] },
+  scross:   { y0: 0, h: 44, pillarTop: 0, span: [-420, 560], open: true, pidY: 98 },   // Southern Cross: the wave roof, no posts on our platform
+  under:    { y0: 0, h: 0, pillarTop: 0, span: [0, 0], open: true, pidY: 88, below: true },   // underground: the vault is the roof
 };
 const BOARD_TOP = 93;
 
-const STATIONS = ROUTE.map((r, index) => {
-  const st = { ...STATION_DEFAULTS, ...r, index };
-  st.dist = st.at;
-  st.layout = layoutStation(st);
-  return st;
-});
-const LAST_STATION = STATIONS.length - 1;
+let STATIONS, LAST_STATION;
+function buildStations() {
+  STATIONS = ROUTE.map((r, index) => {
+    const st = { ...STATION_DEFAULTS, ...r, index };
+    st.dist = st.at;
+    st.layout = layoutStation(st);
+    return st;
+  });
+  LAST_STATION = STATIONS.length - 1;
+}
+buildStations();
 const stn = code => STATIONS.find(s => s.code === code);
 
 // Kilometres from Flinders Street at world position d (the line is not
@@ -41,16 +47,16 @@ function layoutStation(st) {
   const [L, R] = st.platform, items = [];
   const clear = x => x > L + 6 && x < R - 12 && (x < PLAT.STALL_X - 10 || x > PLAT.STALL_X + 36) &&
                      Math.abs(x - PLAT.BOARD_X) > 34 + st.en.length * 2;      // keep the name board unobstructed
-  const span = ROOFS[st.roof].span || [L, R];
+  const roof = ROOFS[st.roof], span = roof.span || [L, R];
   // roof pillars sit mid-carriage (41 px apart), clear of every door
-  for (let x = Math.ceil((span[0] + 6) / 41) * 41; x <= span[1] - 6; x += 41) items.push({ type: 'pillar', x, y: 158 });
+  if (!roof.open) for (let x = Math.ceil((span[0] + 6) / 41) * 41; x <= span[1] - 6; x += 41) items.push({ type: 'pillar', x, y: 158 });
   const every = (start, step, fn) => { for (let x = start + step * Math.ceil((L - start) / step); x < R; x += step) fn(x); };
-  every(30, 82, x => clear(x) && items.push({ type: 'lamp', x, y: 161 }));
+  if (!roof.open) every(30, 82, x => clear(x) && items.push({ type: 'lamp', x, y: 161 }));
   every(56, 82, x => clear(x) && clear(x + 10) && items.push({ type: 'bench', x, y: 166 }));
   every(76, 164, x => clear(x) && items.push({ type: 'bin', x, y: 164 }));
-  for (const x of [70, 228]) if (x > span[0] + 8 && x < span[1] - 8) items.push({ type: 'pid', x, y: 150 });   // next-train displays
-  items.push({ type: 'myki', x: 256, y: 165 });
-  items.push({ type: 'stall', x: PLAT.STALL_X, y: PLAT.STALL_Y });
+  for (const x of [70, 228]) if (roof.open || (x > span[0] + 8 && x < span[1] - 8)) items.push({ type: 'pid', x, y: 150 });   // next-train displays
+  if (!roof.below) items.push({ type: 'myki', x: 256, y: 165 });                 // underground, the readers are up at the gates
+  items.push({ type: roof.below ? 'vending' : 'stall', x: PLAT.STALL_X, y: PLAT.STALL_Y });
   items.push({ type: 'board', x: PLAT.BOARD_X, y: 159 });
   if (st.extras.includes('bikes'))
     for (const x of [326, 340]) if (clear(x)) items.push({ type: 'bikes', x, y: 160 });
@@ -127,6 +133,15 @@ function buildProps(p, lit) {
       }
     }),
     stall: prop(27, 26, 0, 25, g => paintStall(g, p, lit)),
+    // a drinks machine, lit up from inside
+    vending: prop(14, 24, 0, 23, g => {
+      rect(g, 0, 0, 14, 24, p.red);
+      rect(g, 13, 0, 1, 24, p.rust);
+      rect(g, 2, 2, 7, 15, p.ink);
+      for (let y = 3; y < 16; y += 3) for (let x = 3; x < 9; x += 2) px(g, x, y, [p.skyMid, p.glow, p.grassLight, p.white][(x + y) % 4]);
+      rect(g, 10, 4, 2, 6, p.grayDark); px(g, 10, 5, PALETTE.grassLight);
+      rect(g, 2, 19, 9, 2, p.ink);
+    }),
   };
 }
 
@@ -176,10 +191,12 @@ function buildStationSprites(st, p, lit) {
   const [L, R] = st.platform, roof = ROOFS[st.roof];
   const span = roof.span || [L, R];
   return {
-    slab: buildSlab(p, R - L, st.index),
-    roof: st.roof === 'heritage' ? buildVerandah(p, span[1] - span[0]) : buildTinRoof(p, span[1] - span[0], st.roofColor),
+    slab: st.roof === 'under' ? buildTiledSlab(p, R - L, UNDER_STYLES[st.under]) : buildSlab(p, R - L, st.index),
+    roof: st.roof === 'heritage' ? buildVerandah(p, span[1] - span[0]) : st.roof === 'scross' ? buildWaveRoof(p, lit, span[1] - span[0])
+        : st.roof === 'under' ? null : buildTinRoof(p, span[1] - span[0], st.roofColor),
     roofX: span[0], roofY: roof.y0,
     board: buildBoard(p, st, lit),
+    backs: st.back.map(key => BACKS[key].build(p, lit, st)),
   };
 }
 
@@ -223,7 +240,7 @@ function buildVerandah(p, w) {
 
 function buildTinRoof(p, w, color) {
   const [c, g] = makeCanvas(w, 7);
-  const base = p[color], dark = p[{ red: 'rust', blue: 'navy', gray: 'grayDark' }[color] || 'greenDark'];
+  const base = p[color], dark = p[{ red: 'rust', blue: 'navy', gray: 'grayDark', brown: 'brownDark', glow: 'amber', vline: 'purple', skyMid: 'skyDeep' }[color] || 'greenDark'];
   rect(g, 1, 0, w - 2, 1, dark);
   rect(g, 0, 1, w, 4, base);
   for (let x = 1; x < w; x += 3) rect(g, x, 1, 1, 4, dark);   // corrugations
@@ -239,7 +256,7 @@ function buildBoard(p, st, lit) {
   for (const x of [3, bw - 5]) { rect(g, x, bh, 2, h - bh, p.grayDark); rect(g, x, bh, 1, h - bh, p.gray); }
   rect(g, 0, 0, bw, bh, p.navy);
   rect(g, 1, 1, bw - 2, bh - 2, p.blue);
-  rect(g, 1, 1, bw - 2, 2, p.skyMid);                    // the line's colour along the top
+  rect(g, 1, 1, bw - 2, 2, p[LINE.stripe]);             // the line's colour along the top
   drawText(g, st.en, 5, 6, lit ? PALETTE.cloudShade : p.white);     // lit from inside after dark
   return c;
 }
@@ -247,8 +264,13 @@ function buildBoard(p, st, lit) {
 // --- station backdrops: drawn in a parallax layer behind the line ------
 // sx is the sprite's screen x while the train stands at the station.
 const BACKDROPS = {
-  city:     { layer: 'far', sx: -84, y: 52, build: buildCity },       // the towers of the CBD
-  flinders: { layer: 'mid', sx: -10, y: 62, build: buildFlinders },   // the station building itself
+  city:      { layer: 'far', sx: -84, y: 52, build: buildCity },       // the towers of the CBD
+  flinders:  { layer: 'mid', sx: -10, y: 62, build: buildFlinders },   // the station building itself
+  scrossMid: { layer: 'mid', sx: -170, y: 78, build: (p, lit) => buildScrossMid(p, lit) }, // Southern Cross: the other platforms and their trains
+};
+// Station structures right behind the train (1.0x), drawn before it
+const BACKS = {
+  scrossBack: { sx: -420, y: 0, build: (p, lit, st) => buildScrossBack(p, lit, st) },               // the white columns holding up the wave roof
 };
 
 // The city seen from the platforms, looking north: glass and concrete
@@ -355,6 +377,7 @@ function drawBackdrops(g, v, layer) {
   const f = PARALLAX[layer];
   for (const st of STATIONS)
     for (const key of st.backdrop) {
+      if (!v.backdrops[key]) continue;
       const b = BACKDROPS[key];
       if (b.layer !== layer) continue;
       const spr = v.backdrops[key];
@@ -363,15 +386,28 @@ function drawBackdrops(g, v, layer) {
     }
 }
 
+// Station structures behind the train (Southern Cross's columns)
+function drawStationBack(g, v) {
+  const cam = Math.floor(sim.dist);
+  for (let i = 0; i < STATIONS.length; i++) {
+    const st = STATIONS[i], s = v.stations[i];
+    st.back.forEach((key, k) => {
+      const b = BACKS[key], spr = s.backs[k], x = b.sx + st.dist - cam;
+      if (x < W && x + spr.width > 0) g.drawImage(spr, x, b.y);
+    });
+  }
+}
+
 // --- near-side platform: slab, then furniture and people sorted by depth
 const frontItems = [], byY = (a, b) => a.y - b.y;
 function drawStationFront(g, v) {
   const cam = Math.floor(sim.dist);
   for (let i = 0; i < STATIONS.length; i++) {
     const st = STATIONS[i], off = st.dist - cam;
-    if (st.platform[0] + off >= W + 40 || st.platform[1] + off <= -40) continue;
-    const s = v.stations[i];
+    const s = v.stations[i], r0 = s.roof ? s.roofX + off : 0, r1 = s.roof ? r0 + s.roof.width : 0;
+    if ((st.platform[0] + off >= W + 40 || st.platform[1] + off <= -40) && (r0 >= W || r1 <= 0)) continue;
     g.drawImage(s.slab, st.platform[0] + off, PLAT.TOP);
+    if (st.psd) drawScreenDoors(g, v, st, off);
     if (drive.on && !ui.title) drawStopMark(g, v, off);
     if (i === LAST_STATION) drawBuffer(g, v, off);
     frontItems.length = 0;
@@ -379,8 +415,35 @@ function drawStationFront(g, v) {
     for (let k = 0; k < sim.people.length; k++) { const q = sim.people[k]; if (q.st === i && !q.hidden) frontItems.push(q); }
     frontItems.sort(byY);
     for (let k = 0; k < frontItems.length; k++) { const it = frontItems[k]; it.d ? drawPersonAt(g, v, it, off) : drawProp(g, v, st, it, off); }
-    g.drawImage(s.roof, s.roofX + off, s.roofY);
+    if (s.roof) g.drawImage(s.roof, s.roofX + off, s.roofY);
   }
+  drawBubbles(g);
+}
+
+// Platform screen doors (the Metro Tunnel): a glass wall along the edge,
+// a pair of doors at every train door, opening with them
+function drawScreenDoors(g, v, st, off) {
+  const p = v.p, [L, R] = st.platform, top = 117, bot = PLAT.TOP + 2, here = sim.station === st.index && sim.state === 'STOPPED';
+  const k = here ? Math.round(sim.doorOpen * (DOOR_W + 1)) : 0, so = here ? Math.round(sim.stopOffset) : 0;
+  const x0 = Math.max(L + off, -2), x1 = Math.min(R + off, W + 2);
+  if (x1 <= x0) return;
+  rect(g, x0, top, x1 - x0, 3, p.ink);                                           // the header, its lights
+  for (let x = x0; x < x1; x++) {
+    const sx = x - off;
+    let inDoor = -1;
+    for (let d = 0; d < DOORS.length; d++) if (sx >= DOORS[d] + so - 1 && sx < DOORS[d] + so + DOOR_W + 1) { inDoor = sx - (DOORS[d] + so - 1); break; }
+    if (inDoor >= 0) {                                                            // a door: two leaves sliding apart
+      const half = (DOOR_W + 2) / 2, open = inDoor < half ? inDoor < half - k / 2 : inDoor >= half + k / 2;
+      if (!open) continue;
+      if (inDoor === 0 || inDoor === DOOR_W + 1) rect(g, x, top + 3, 1, bot - top - 3, p.grayLight);
+      for (let y = top + 3; y < bot; y++) if (bayer(x, y) < 3) px(g, x, y, p.skyLight);
+      continue;
+    }
+    if (sx % 41 === 0) { rect(g, x, top + 3, 1, bot - top - 3, p.grayLight); continue; }   // the fixed panels' frames
+    for (let y = top + 3; y < bot; y++) if (bayer(x, y) < 2) px(g, x, y, p.skyLight);
+    if ((sx & 7) === 0) px(g, x, top + 1, here && sim.doorOpen > 0 ? PALETTE.grassLight : p.grayDark);
+  }
+  rect(g, x0, bot - 2, x1 - x0, 1, p.grayLight);
 }
 
 // Where a driver stops: a board at the platform edge, level with the
@@ -425,9 +488,10 @@ function drawProp(g, v, st, it, off) {
     const b = v.stations[st.index].board;
     g.drawImage(b, x - (b.width >> 1), BOARD_TOP);
   } else if (it.type === 'pid') {
-    const r = ROOFS[st.roof], spr = v.props.pid;
-    g.drawImage(spr.c, x - spr.ax, r.y0 + r.h);
-    addLight(x, r.y0 + r.h + 5, LIGHT_BULB);
+    const r = ROOFS[st.roof], spr = v.props.pid, y = r.pidY || r.y0 + r.h;
+    if (r.pidY) rect(g, x, y - 12, 1, 12, p.grayDark);                             // hung on a rod
+    g.drawImage(spr.c, x - spr.ax, y);
+    addLight(x, y + 5, LIGHT_BULB);
   } else if (it.type === 'pigeon') {                     // pecking about, hopping a step now and then
     const f = Math.floor(sim.clock * 2.5 + it.x) % 5, body = it.gull ? 'white' : 'gray';
     mpAt(g, p, x + (Math.floor(sim.clock * 0.35 + it.x * 0.7) & 1), it.y, it.x & 1 ? 1 : -1);
