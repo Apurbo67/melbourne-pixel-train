@@ -2,7 +2,7 @@
 'use strict';
 
 // =====================================================================
-// 2. PALETTE  (32 colours for every sprite and tile; only the time-of-day
+// 2. PALETTE  (32 colours, and V/Line's two purples, for every sprite and tile; only the time-of-day
 //    sky, the colour tint and the additive glow pass add colours on top)
 // =====================================================================
 const PALETTE = {
@@ -14,6 +14,7 @@ const PALETTE = {
   glow:     '#ffd65c', amber:     '#f0a030', red:        '#c23a30', rust:      '#8c4a3a',
   greenDeep:'#12382a', greenDark: '#1e5a36', green:      '#2e7d3e', grass:     '#4f9a3c',
   grassLight:'#86c04a', paddy:    '#c4c95a', haze:       '#4f7f6c', blue:      '#2a5a9c',
+  vline:    '#8f2a8c', lilac:     '#d88fd2',                                       // V/Line purple
 };
 
 // Palette lighting: each lighting remaps palette keys onto other palette
@@ -22,6 +23,7 @@ const PALETTE = {
 // p.glow / p.amber are yellow *paint* (safety line, signs) and do darken.
 const LIGHTING = {
   day:   { lit: false, map: {} },
+  under: { lit: true, map: {} },        // underground stations: daylight colours under lamps that are always on
   dusk:  { lit: true, map: {
     slate: 'indigo', orange: 'rose', peach: 'orange', glow: 'peach', amber: 'orange',
     skyDeep: 'slate', skyMid: 'purple', skyLight: 'rose', white: 'peach', cloudShade: 'rose',
@@ -29,6 +31,7 @@ const LIGHTING = {
     brownDark: 'ink', brown: 'brownDark', tan: 'rust', cream: 'peach', red: 'rust', rust: 'brown',
     greenDeep: 'ink', greenDark: 'greenDeep', green: 'greenDark', grass: 'green',
     grassLight: 'grass', paddy: 'tan', haze: 'slate', blue: 'indigo',
+    vline: 'purple', lilac: 'rose',
   } },
   night: { lit: true, map: {
     navy: 'ink', indigo: 'navy', slate: 'indigo', purple: 'indigo', rose: 'purple',
@@ -38,5 +41,6 @@ const LIGHTING = {
     brownDark: 'ink', brown: 'navy', tan: 'purple', cream: 'slate', red: 'purple', rust: 'indigo',
     greenDeep: 'ink', greenDark: 'greenDeep', green: 'greenDeep', grass: 'greenDeep',
     grassLight: 'greenDark', paddy: 'greenDark', haze: 'navy', blue: 'indigo',
+    vline: 'purple', lilac: 'purple',
   } },
 };

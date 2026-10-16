@@ -121,7 +121,7 @@ function toggleEngine() {
     if (drive.lever > 0) { toast('LEVER TO N FIRST', 'amber'); return; }
     startEngine();
   } else if (drive.engine === 'ON') {
-    if (sim.speed > 0.5) toast('PANTOGRAPH DOWN - COASTING', 'amber');
+    if (sim.speed > 0.5) toast(TRACTION.coasting, 'amber');
     setEngine('SHUTDOWN');
     playAir(0.5, 0.05);
   }
@@ -140,7 +140,7 @@ function updateEngine(dt) {
         setEngine('ON');
         drive.rpm = 0.3;
         playThump(0.1);
-        toast('POWER ON', 'grassLight');
+        toast(TRACTION.on, 'grassLight');
       }
       break;
     case 'SHUTDOWN':
@@ -165,7 +165,7 @@ function setLever(n) {
   if (drive.lever === EB) { toast('EMERGENCY BRAKE!', 'red'); playAir(1.3, 0.14); }
   else if (was < 0 && drive.lever >= 0 && sim.speed < 1) playAir(0.5, 0.04);    // brakes released
   if (drive.lever > 0 && was <= 0) {
-    if (drive.engine === 'OFF' || drive.engine === 'SHUTDOWN') toast('RAISE THE PANTOGRAPH [E]', 'amber');
+    if (drive.engine === 'OFF' || drive.engine === 'SHUTDOWN') toast(TRACTION.up + ' [E]', 'amber');
     else if (sim.doorOpen > 0) toast('CLOSE THE DOORS [O]', 'amber');
   }
 }
@@ -238,6 +238,7 @@ function depart() {
   sim.state = 'DRIVING';
   sim.stopPhase = null;
   sim.shake = Math.max(sim.shake, 0.5 + drive.lever * 0.12);   // couplings snatch
+  announceNext(sim.station);
   return true;
 }
 
@@ -251,7 +252,7 @@ function checkSpeed(dt) {
   if ((drive.beepT -= dt) <= 0) { drive.beepT = 0.45; playBeep(); }
 }
 
-// Rolling past a platform without stopping, or into the buffers at Belgrave
+// Rolling past a platform without stopping, or into the buffers at the end of the line
 function checkLine() {
   const st = STATIONS[sim.station + 1];
   if (!st) return;
@@ -300,7 +301,7 @@ function finishJourney() {
   const P = drive.pts, comfort = Math.round(drive.comfort * 4);
   const total = Math.round(P.stops + P.time + P.pax + comfort + P.penalty);
   const best = readBest();
-  if (total > best) try { localStorage.setItem('mpt-best', String(total)); } catch (e) { /* storage blocked */ }
+  if (total > best) try { localStorage.setItem(bestKey(), String(total)); } catch (e) { /* storage blocked */ }
   drive.final = { total, comfort, best, record: total > best && best > 0,
                   stars: total >= 3000 ? 3 : total >= 2200 ? 2 : total >= 1200 ? 1 : 0 };
   playScore(true);
@@ -354,19 +355,19 @@ function passengerOut(q) {
 function driveHint() {
   const e = drive.engine;
   if (ui.complete) return '';
-  if (e === 'CRANK') return 'RAISING THE PANTOGRAPH...';
+  if (e === 'CRANK') return TRACTION.rising;
   const power = drive.lever < 0 ? 'RELEASE THE BRAKE [↑]' : 'APPLY POWER [↑]';
   if (sim.state === 'STOPPED') {
     const term = sim.station === LAST_STATION;
     switch (sim.stopPhase) {
-      case 'SETTLE': case 'READY': return e === 'OFF' && sim.station === 0 ? 'RAISE THE PANTOGRAPH [E]' : 'OPEN THE DOORS [O]';
+      case 'SETTLE': case 'READY': return e === 'OFF' && sim.station === 0 ? TRACTION.up + ' [E]' : 'OPEN THE DOORS [O]';
       case 'DOORS_OPEN': case 'BOARDING': return term ? 'PASSENGERS GETTING OFF...' : 'PASSENGERS BOARDING...';
-      case 'BOARDED': return !term ? 'CLOSE THE DOORS [O]' : e === 'ON' ? 'LOWER THE PANTOGRAPH [E]' : '';
+      case 'BOARDED': return !term ? 'CLOSE THE DOORS [O]' : e === 'ON' ? TRACTION.down + ' [E]' : '';
       case 'DOORS_CLOSE': return 'DOORS CLOSING...';
       case 'WAIT': return 'DEPARTS AT ' + hhmm(wallClock(tripHour(SCHEDULE[sim.station].dep))) + ' - WAIT';
       case 'FLAG': return 'WAIT FOR THE ALL CLEAR...';
-      case 'CLEAR': return e === 'OFF' ? 'RAISE THE PANTOGRAPH [E]' : e === 'ON' ? power : '';
-      case 'PARKED': return e === 'ON' ? 'LOWER THE PANTOGRAPH [E]' : '';
+      case 'CLEAR': return e === 'OFF' ? TRACTION.up + ' [E]' : e === 'ON' ? power : '';
+      case 'PARKED': return e === 'ON' ? TRACTION.down + ' [E]' : '';
     }
     return '';
   }
@@ -376,7 +377,7 @@ function driveHint() {
   const o = sim.dist - st.dist, w = stopWindow(st);
   if (sim.speed < 0.3) {
     if (o >= w[0] && o <= w[1]) return 'OPEN THE DOORS [O]';
-    if (e === 'OFF') return 'RAISE THE PANTOGRAPH [E]';
+    if (e === 'OFF') return TRACTION.up + ' [E]';
     if (o > w[1]) return 'OVERSHOT! DRIVE ON [↑]';
     if (o > -160) return 'CREEP UP ' + Math.ceil(w[0] - o) + ' M [↑]';
     return power;

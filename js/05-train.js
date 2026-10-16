@@ -1,12 +1,44 @@
-// Melbourne Pixel Train - The six-car electric set: car and cab sprites, pantographs, doors, horn
+// Melbourne Pixel Train - The six-car set in each line's livery: car and cab sprites, pantographs, doors, horn, exhaust
 'use strict';
 
 // =====================================================================
 // 4. TRAIN
 // =====================================================================
-// A six-car suburban electric set in Metro's white, blue and yellow,
-// heading right: the leading car carries the driver's cab, and cars 1, 3,
-// 4 and 6 a pantograph. The whole train stays fixed on screen.
+// A six-car set heading right: the leading car carries the driver's cab.
+// The whole train stays fixed on screen. Each line runs its own kind of
+// train (LINE.train), painted from one of the TRAIN_STYLES below:
+//   xtrap    Alstom X'Trapolis 100: white, a blue cantrail, yellow doors
+//   siemens  Siemens Nexas: silver, Metro's blue facets, a yellow-framed face
+//   comeng   Comeng: ribbed stainless steel, blue doors, a flat yellow face
+//   hcmt     the High Capacity Metro Train: white, a black window band, a raked black nose
+//   vlocity  V/Line's VLocity diesel: silver and purple, a yellow nose, no pantographs
+const TRAIN_STYLES = {
+  xtrap:   { pantos: [0, 2, 3, 5], body: 'white', edge: 'cloudShade', cant: 'blue', band: 'navy', bandRows: [4, 5],
+             skirt: 'blue', door: 'glow', doorEdge: 'amber', pods: true,
+             nose: [37, 38, 40, 41, 42, 43, 44, 45, 45, 45, 45, 45, 45, 45, 45, 45], face: r => r < 10 ? 'blue' : r === 15 ? 'amber' : 'glow',
+             map: ['white', 'blue'] },
+  siemens: { pantos: [0, 2, 3, 5], body: 'cloudShade', edge: 'grayLight', cant: 'grayLight', band: 'navy', bandRows: [4, 5],
+             skirt: 'grayLight', door: 'skyMid', doorEdge: 'blue', pods: true, facets: true,
+             nose: [38, 39, 40, 41, 42, 43, 43, 44, 44, 44, 45, 45, 45, 45, 45, 45],
+             face: r => r < 2 ? 'cloudShade' : r < 10 ? 'glow' : r < 13 ? 'skyMid' : 'white',
+             map: ['cloudShade', 'skyMid'] },
+  comeng:  { pantos: [0, 2, 3, 5], body: 'grayLight', edge: 'gray', cant: 'gray', band: 'indigo', bandRows: [5, 4],
+             skirt: 'blue', door: 'blue', doorEdge: 'navy', pods: true, ribs: true,
+             nose: [40, 41, 42, 42, 43, 43, 43, 43, 43, 43, 43, 43, 43, 43, 43, 43],
+             face: r => r < 2 ? 'grayLight' : r < 9 ? 'white' : r < 11 ? 'blue' : 'glow',
+             map: ['grayLight', 'blue'] },
+  hcmt:    { pantos: [0, 2, 3, 5], body: 'white', edge: 'cloudShade', cant: 'ink', band: 'ink', bandRows: [3, 7],
+             skirt: 'skyMid', door: 'white', doorEdge: 'skyMid', pods: false,
+             nose: [33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 45, 45, 45],
+             face: r => r < 9 ? 'ink' : r < 11 ? 'skyMid' : r < 15 ? 'white' : 'grayLight',
+             map: ['white', 'ink'] },
+  vlocity: { pantos: [], body: 'cloudShade', edge: 'grayLight', cant: 'grayLight', band: 'ink', bandRows: [4, 5],
+             skirt: 'vline', door: 'lilac', doorEdge: 'vline', pods: true, exhaust: true, swoosh: true,
+             nose: [35, 36, 38, 39, 40, 41, 42, 43, 44, 45, 45, 45, 45, 45, 45, 45],
+             face: r => r < 2 ? 'grayLight' : r < 11 ? 'glow' : r < 13 ? 'vline' : 'cloudShade',
+             map: ['cloudShade', 'vline'] },
+};
+let STYLE = TRAIN_STYLES[LINE.train];
 const TRAIN = (() => {
   const leadX = CONFIG.TRAIN_FRONT_X - CONFIG.LOCO_W;
   const vehicles = [{ x: leadX, w: CONFIG.LOCO_W, y: LAYER_Y.loco, wheels: [5, 13, 25, 33] }];
@@ -15,12 +47,27 @@ const TRAIN = (() => {
     x -= CONFIG.CAR_GAP + CONFIG.CAR_W;
     vehicles.push({ x, w: CONFIG.CAR_W, y: LAYER_Y.car, wheels: [5, 13, 25, 33] });
   }
-  return { vehicles, centerX: (x + CONFIG.TRAIN_FRONT_X) / 2, pantos: [0, 2, 3, 5] };
+  return { vehicles, centerX: (x + CONFIG.TRAIN_FRONT_X) / 2, pantos: STYLE.pantos };
 })();
 const WIRE_Y = 112;                                   // the contact wire, 9 px above the roofs
 const DOOR_AT = [7, 28], DOOR_W = 4;                  // two doorways a side on every car
 const WINDOWS = [2, 12, 17, 22, 33];                  // left edge of each 4 px saloon window
 const CAB_AT = 35;                                    // where the lead car's saloon ends and the cab begins
+// What the driver does to get power: raise the pantographs, or start the diesels
+let DIESEL, TRACTION;
+function trainStyle() {
+  STYLE = TRAIN_STYLES[LINE.train];
+  TRAIN.pantos = STYLE.pantos;
+  DIESEL = !!STYLE.exhaust;
+  TRACTION = DIESEL
+  ? { up: 'START THE ENGINE', down: 'STOP THE ENGINE', rising: 'STARTING THE ENGINE...', on: 'ENGINE RUNNING',
+      coasting: 'ENGINE OFF - COASTING', hud: 'ENG', states: ['OFF', 'RUN', 'START', 'STOP'], btn: ['START', 'STOP'],
+      aria: ['Start the engine', 'Stop the engine'] }
+  : { up: 'RAISE THE PANTOGRAPH', down: 'LOWER THE PANTOGRAPH', rising: 'RAISING THE PANTOGRAPH...', on: 'POWER ON',
+      coasting: 'PANTOGRAPH DOWN - COASTING', hud: 'PAN', states: ['DOWN', 'UP', 'RISE', 'DROP'], btn: ['RAISE', 'LOWER'],
+      aria: ['Raise the pantograph', 'Lower the pantograph'] };
+}
+trainStyle();
 
 // 7x7 wheel with four spokes; frames cover a quarter turn (spoke symmetry)
 function buildWheels(p) {
@@ -53,24 +100,31 @@ function windowPane(g, p, lit, x, y, w, h) {
   }
 }
 
-// One car body, 19 rows with row 0 the roof, painted at (x0, y0): white
-// sides, a dark window band, a blue stripe along the skirt, yellow doors
+// One car body, 19 rows with row 0 the roof, painted at (x0, y0) in the
+// line's style: roof, cantrail, body side, window band, skirt stripe, doors
 function paintCarBody(g, p, lit, rng, x0, y0, w, cab) {
-  const R = (x, y, ww, h, col) => rect(g, x0 + x, y0 + y, ww, h, col);
+  const S = STYLE, R = (x, y, ww, h, col) => rect(g, x0 + x, y0 + y, ww, h, col);
+  const [b0, bh] = S.bandRows;
   R(3, 0, w - (cab ? 3 : 6), 1, p.grayLight);         // roof crown
-  for (const ax of [9, 22]) {                         // air-conditioning pods
+  if (S.pods) for (const ax of [9, 22]) {             // air-conditioning pods
     R(ax, 0, 8, 1, p.gray);
     R(ax + 1, 0, 1, 1, p.grayDark); R(ax + 6, 0, 1, 1, p.grayDark);
   }
+  if (S.exhaust) { R(cab ? 4 : 30, -1, 2, 2, p.grayDark); px(g, x0 + (cab ? 4 : 30), y0 - 1, p.ink); }   // the diesel's exhaust stack
   R(1, 1, w - (cab ? 1 : 2), 1, p.gray);              // roof
-  R(0, 2, w, 1, p.blue);                              // cantrail
-  R(0, 3, w, 12, p.white);                            // body side
-  R(0, 4, w, 5, p.navy);                              // window band
-  R(0, 12, w, 1, p.blue);                             // skirt stripe
+  R(0, 2, w, 1, p[S.cant]);                           // cantrail
+  R(0, 3, w, 12, p[S.body]);                          // body side
+  if (S.ribs) for (let x = 1; x < w; x += 2) { R(x, 3, 1, b0 - 3, p[S.edge]); R(x, b0 + bh + 1, 1, 14 - b0 - bh, p[S.edge]); }   // fluted stainless
+  R(0, b0, w, bh, p[S.band]);                         // window band
+  R(0, 12, w, 1, p[S.skirt]);                         // skirt stripe
+  if (S.swoosh) {                                     // V/Line: a purple sweep along the bottom, lilac over it
+    R(0, 11, w, 2, p.vline);
+    for (let x = 0; x < w; x++) if (((x + (cab ? 5 : 0)) % 26) < 9) px(g, x0 + x, y0 + 10 - (((x % 26) / 3) | 0) % 2, p.lilac);
+  }
   R(0, 14, w, 1, p.cloudShade);
   R(0, 15, w, 1, p.grayLight);
-  R(0, 3, 1, 12, p.cloudShade);
-  if (!cab) R(w - 1, 3, 1, 12, p.cloudShade);
+  R(0, 3, 1, 12, p[S.edge]);
+  if (!cab) R(w - 1, 3, 1, 12, p[S.edge]);
   for (const wx of WINDOWS) {
     if (wx + 4 > w) continue;
     windowPane(g, p, lit, x0 + wx, y0 + 5, 4, 3);
@@ -81,33 +135,38 @@ function paintCarBody(g, p, lit, rng, x0, y0, w, cab) {
       R(a, 7, b - a + 1, 1, col);
     }
   }
-  for (const dx of DOOR_AT) {                         // doors: yellow leaves, a small window each
-    R(dx, 3, DOOR_W, 13, p.glow);
-    R(dx, 3, DOOR_W, 1, p.amber);
-    R(dx, 15, DOOR_W, 1, p.amber);
+  if (S.facets) {                                     // Metro's blue facets either side of the first door
+    for (let k = 0; k < 7; k++) { R(k, 9 + (k >> 1), 7 - k, 1, p.blue); R(0, 3 + k, Math.max(0, 5 - k), 1, p.skyMid); }
+    for (let k = 0; k < 5; k++) R(13 + k, 13 - k, 5 - k, 1, p.navy);
+  }
+  for (const dx of DOOR_AT) {                         // doors: two leaves, a small window each
+    R(dx, 3, DOOR_W, 13, p[S.door]);
+    R(dx, 3, DOOR_W, 1, p[S.doorEdge]);
+    R(dx, 15, DOOR_W, 1, p[S.doorEdge]);
+    if (S.door === 'white') { R(dx - 1, 3, 1, 13, p[S.doorEdge]); R(dx + DOOR_W, 3, 1, 13, p[S.doorEdge]); }
     windowPane(g, p, lit, x0 + dx + 1, y0 + 5, 2, 3);
   }
   R(1, 16, w - 2, 1, p.grayDark);                     // underframe, equipment boxes
   R(2, 17, w - 4, 1, p.ink);
   R(16, 17, 6, 2, p.grayDark);
+  if (S.exhaust) R(6, 17, 9, 2, p.ink);               // the engine under the floor
 }
 
 // Passenger car, 39x19. Row 0 is the roof (screen y 121).
 function buildCar(p, lit, seed) {
-  const w = CONFIG.CAR_W, [c, g] = makeCanvas(w, 19);
-  paintCarBody(g, p, lit, mulberry32(100 + seed), 0, 0, w, false);
+  const w = CONFIG.CAR_W, [c, g] = makeCanvas(w, 20);
+  paintCarBody(g, p, lit, mulberry32(100 + seed), 0, 1, w, false);
   return c;
 }
 
 // Leading car, 48x24: the same body five rows down the canvas (so its roof
-// is level with the others), then the cab - a raked windscreen in a blue
-// nose, yellow below the waist so it can be seen coming.
-const NOSE = [37, 38, 40, 41, 42, 43, 44, 45, 45, 45, 45, 45, 45, 45, 45, 45];
+// is level with the others), then the cab - its profile and the colours of
+// its face come from the style
 function buildLead(p, lit) {
-  const [c, g] = makeCanvas(48, 24), Y = 5;
+  const [c, g] = makeCanvas(48, 24), Y = 5, NOSE = STYLE.nose;
   paintCarBody(g, p, lit, mulberry32(99), 0, Y, CAB_AT, true);
   for (let r = 0; r < NOSE.length; r++) {
-    const col = r === 0 ? p.grayLight : r === 1 ? p.gray : r < 10 ? p.blue : r === 15 ? p.amber : p.glow;
+    const col = r === 0 ? p.grayLight : r === 1 ? p.gray : p[STYLE.face(r)];
     rect(g, CAB_AT, Y + r, NOSE[r] - CAB_AT + 1, 1, col);
     if (r >= 3 && r <= 8) rect(g, NOSE[r] - 1, Y + r, 2, 1, p.ink);      // windscreen
   }
@@ -117,7 +176,7 @@ function buildLead(p, lit) {
   if (lit) rect(g, CAB_AT + 1, Y + 5, 3, 2, PALETTE.amber);
   else { rect(g, CAB_AT + 1, Y + 5, 3, 2, p.indigo); px(g, CAB_AT + 1, Y + 5, p.skyLight); }
   rect(g, CAB_AT, Y + 3, 1, 13, p.navy);                                  // saloon / cab partition
-  rect(g, 37, Y + 2, 3, 1, PALETTE.amber);                                // destination: BELGRAVE
+  rect(g, 37, Y + 2, 3, 1, PALETTE.amber);                                // destination display
   rect(g, 44, Y + 11, 2, 2, p.grayDark);                                  // light cluster
   px(g, 45, Y + 11, PALETTE.white);
   px(g, 45, Y + 12, PALETTE.glow);
@@ -180,10 +239,27 @@ function drawTrain(g, v) {
     for (const wx of veh.wheels) g.drawImage(wf, veh.x + wx - 3, LAYER_Y.wheel);
     for (let k = 0; k < veh.wheels.length; k += 2) drawBogie(g, p, veh.x + veh.wheels[k], veh.x + veh.wheels[k + 1]);
     if (TRAIN.pantos.includes(i)) drawPanto(g, p, veh.x + 18, LAYER_Y.car + sway, up);
-    g.drawImage(i === 0 ? v.lead : v.cars[i - 1], veh.x, veh.y + sway);
+    g.drawImage(i === 0 ? v.lead : v.cars[i - 1], veh.x, veh.y + sway - (i ? 1 : 0));   // car sprites carry a row above the roof
   });
   drawDoors(g, v);
+  if (STYLE.exhaust) drawExhaust(g, v);
   if (sim.hornWave > 0) drawHornWaves(g, p);
+}
+
+// The VLocity's diesels: a haze of exhaust off each car's roof stack,
+// thick when the engines work hard, trailing back with the speed
+function drawExhaust(g, v) {
+  const load = drive.engine === 'ON' || drive.engine === 'CRANK' ? Math.max(0, drive.rpm - 0.2) / 0.8 : 0;
+  if (load <= 0.02) return;
+  TRAIN.vehicles.forEach((veh, i) => {
+    const sx = veh.x + (i ? 31 : 5), sy = (i ? LAYER_Y.car : LAYER_Y.loco + 5) - 2;
+    for (let k = 0; k < 5; k++) {
+      const ph = (sim.clock * 0.9 + k / 5 + i * 0.29) % 1, r = 1 + Math.round(ph * 4);
+      const x = Math.round(sx - ph * (6 + sim.speed * 0.35)), y = Math.round(sy - 2 - ph * 11);
+      const dens = Math.round((1 - ph * 0.8) * 12 * load);
+      if (dens > 0) g.drawImage(puffSprite(v, r, dens, ph < 0.3 ? 0 : 1), x - r, y - r);
+    }
+  });
 }
 
 // Left pixel column of every doorway along the train
