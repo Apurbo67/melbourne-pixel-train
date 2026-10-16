@@ -16,6 +16,7 @@ function suburbFar(ctx) {
       if (lit && on) px(g, tx + ox + 2, 50, PALETTE.glow);
     });
   }
+  if (!stn('BOX')) return;
   const bh = lxOf(L, stn('BOX').dist - 120);                                      // the cluster of towers at Box Hill
   for (let i = 0; i < 9; i++) {
     const tx = bh + i * 9 + randInt(rng, -2, 2), w = randInt(rng, 5, 8), h = Math.max(8, randInt(rng, 18, 36) - Math.abs(i - 4) * 4);
@@ -24,21 +25,15 @@ function suburbFar(ctx) {
   }
 }
 
-// Mid layer: streets of houses under plane trees and gums; a landmark
-// behind each station; two footy ovals
+// Mid layer: streets of houses under plane trees and gums, around the
+// stations' landmarks and the footy ovals (see placeMarks)
 function suburbMid(ctx) {
-  const { rng, L } = ctx, G = 34, keep = [];
-  for (const [code, du, hw, paint] of LANDMARKS) {                                // each station's landmark
-    const cx = lxOf(L, stn(code).dist + du);
-    ctx.stat(cx - hw, cx + hw, -1, (g, p, lit, ox) => paint(g, p, lit, cx + ox, G + 2));
-    keep.push([cx - hw - 4, cx + hw + 4]);
-  }
-  for (const [i, px0] of OVALS) { const cx = lxOf(L, STATIONS[i].dist + px0); keep.push([cx - 48, cx + 48]); footyOval(ctx, cx, G, rng); }
+  const { rng } = ctx, G = 34;
   for (let x = ctx.from; x < ctx.to; ) {
     const w = randInt(rng, 13, 22), hx = x, o = houseDesign(rng, w), tk = rng();
     const tr = randInt(rng, 3, 6), th = randInt(rng, 2, 5), seed = randInt(rng, 1, 1e6), tx = hx + w + randInt(rng, 1, 4), gh = randInt(rng, 16, 28);
     x += w + randInt(rng, 5, 14);
-    if (keep.some(([a, b]) => hx + w > a && hx < b) || !ctx.ok(hx)) continue;
+    if (!ctx.free(hx, hx + w) || !ctx.ok(hx)) continue;
     if (tk < 0.5) ctx.stat(tx - tr - 2, tx + tr + 1, G, (g, p, lit, ox) => roundTree(g, tx + ox, G, tr, th, p, seed, tk < 0.06 ? JACARANDA : LEAFY));
     else if (tk < 0.68) ctx.stat(tx - 14, tx + 14, G, (g, p, lit, ox) => gumTree(g, tx + ox, G, gh, p, seed));
     else if (tk < 0.8) ctx.stat(tx - 3, tx + 4, G, (g, p, lit, ox) => cypress(g, tx + ox, G, gh - 8, p));
@@ -48,11 +43,7 @@ function suburbMid(ctx) {
   }
 }
 
-// --- landmarks: one behind each station, [station code, world px past it, half width, painter] ---
-const LANDMARKS = [
-  ['HAW', 90, 20, paintChurch], ['GFE', -210, 21, paintTownHall], ['GFE', 134, 64, paintCampus],
-  ['CAM', 40, 62, paintMarket], ['BOX', 60, 58, paintBoxHill], ['RWD', 70, 62, paintRingwood],
-];
+// --- landmarks: each line lists its own (LINE.landmarks), painted by name from PAINTERS ---
 const signInk = (p, lit) => lit ? PALETTE.cloudShade : p.white;     // lettering stays readable after dark
 
 // A plain block with a grid of windows; returns its top row

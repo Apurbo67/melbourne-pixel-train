@@ -21,8 +21,10 @@ function clipBegin(g, xa, xb) {
 }
 
 function drawLand(g, v, d) {
-  drawTiled(g, v.masts, d, WIRE_Y - 16);
-  drawTiled(g, v.wires, d, WIRE_Y - 12);
+  if (ELECTRIC) {
+    drawTiled(g, v.masts, d + LINE.mastShift, WIRE_Y - 16);
+    drawTiled(g, v.wires, d + LINE.mastShift, WIRE_Y - 12);
+  }
   drawTiled(g, v.track, d, LAYER_Y.track);
 }
 
@@ -34,11 +36,11 @@ function drawLine(g, v) {
   if (clipBegin(g, -64, b0)) { drawLand(g, v, d); g.restore(); }
   if (clipBegin(g, b1, W + 64)) { drawLand(g, v, d); g.restore(); }
   if (clipBegin(g, b0, b1)) {                          // the wire carries on across, hung from the truss
-    drawTiled(g, v.wires, d, WIRE_Y - 12);
+    if (ELECTRIC) drawTiled(g, v.wires, d + LINE.mastShift, WIRE_Y - 12);
     drawTiled(g, v.deck, d, LAYER_Y.track);
     g.restore();
   }
-  for (let k = 1; k < BRIDGE.spans; k++) g.drawImage(v.pier, b0 + k * BRIDGE.span - 5, PIER_Y);
+  if (BRIDGE.kind !== 'trestle') for (let k = 1; k < BRIDGE.spans; k++) g.drawImage(v.pier, b0 + k * BRIDGE.span - 5, PIER_Y);
   g.drawImage(v.abutment[0], b0 - 14, 147);
   g.drawImage(v.abutment[1], b1 - 2, 147);
   drawTruss(g, v, false);
@@ -48,10 +50,41 @@ function drawLine(g, v) {
 // behind the lattice
 function drawTruss(g, v, near) {
   bridgeX();
+  if (BRIDGE.kind === 'trestle') { if (near) drawTrestleRail(g, v); return; }   // a timber trestle: no truss, a low railing
   const spr = near ? v.trussNear : v.trussFar;
   for (let k = 0; k < BRIDGE.spans; k++) {
     const x = bridgeX0 + k * BRIDGE.span;
     if (x < W && x + spr.width > 0) g.drawImage(spr, x, near ? TRUSS_Y : TRUSS_Y - 4);
+  }
+}
+
+// The Eltham trestle: a timber railing along the deck, and timber bents
+// (pairs of raked posts with cross-bracing) standing down in the gully
+function drawTrestleRail(g, v) {
+  const p = v.p, a = Math.max(-2, bridgeX0), b = Math.min(W + 2, bridgeX1);
+  if (b <= a) return;
+  rect(g, a, 153, b - a, 1, p.tan);                     // along the deck edge, below the wheels
+  rect(g, a, 154, b - a, 1, p.brownDark);
+  for (let x = bridgeX0; x < bridgeX1; x += 8) if (x > -2 && x < W + 2) rect(g, x, 153, 1, 4, p.brown);
+}
+function drawTrestle(g, v) {
+  if (BRIDGE.kind !== 'trestle') return;
+  bridgeX();
+  const p = v.p, top = 154;
+  if (bridgeX1 < -10 || bridgeX0 > W + 10) return;
+  for (let x = bridgeX0 + 6; x < bridgeX1 - 2; x += 14) {
+    if (x < -12 || x > W + 12) continue;
+    for (let y = top; y < H; y++) {
+      const spread = Math.round((y - top) / 6);
+      px(g, x - spread, y, p.brown); px(g, x + 6 + spread, y, p.brown);
+      px(g, x + 1 - spread, y, p.brownDark); px(g, x + 7 + spread, y, p.brownDark);
+    }
+    for (let k = 0; k < 3; k++) {                        // cross-bracing, a waling strap across each tier
+      const y0 = top + 4 + k * 8, s0 = Math.round((y0 - top) / 6);
+      pxLine(g, x - s0, y0, x + 6 + s0 + 1, y0 + 7, p.tan);
+      pxLine(g, x + 6 + s0, y0, x - s0 - 1, y0 + 7, p.tan);
+      rect(g, x - s0 - 1, y0, 9 + 2 * s0, 1, p.brownDark);
+    }
   }
 }
 

@@ -1,17 +1,19 @@
-// Melbourne Pixel Train - Flinders Street to Richmond (MCG, trams), then the Yarra and its parkland
+// Melbourne Pixel Train - City streets (the MCG, trams), the CBD towers, then the Yarra and its parkland
 'use strict';
 
 // --- 1. the city: Flinders Street, Jolimont, Richmond ------------------------
-// Mid layer: the MCG at Jolimont, then brick warehouses, terraces and flats
-function cityMid(ctx) {
-  const { rng, L } = ctx, G = 34, mcg = lxOf(L, stn('RMD').dist - 140);
-  ctx.stat(mcg - 62, mcg + 62, -1, (g, p, lit, ox) => paintMCG(g, p, lit, mcg + ox, G + 2));
+// Mid layer: brick warehouses, terraces and flats, lower the further from
+// the city they stand (the MCG is a landmark: see LINE.landmarks)
+function cityMid(ctx) { cityStreets(ctx, u => Math.max(0.3, Math.min(1, 1 - (u - 150) / 800))); }
+function innerMid(ctx) { cityStreets(ctx, () => 0.42); }
+function cityStreets(ctx, height) {
+  const { rng, L } = ctx, G = 34;
   for (let x = ctx.from; x < ctx.to; ) {
     const w = randInt(rng, 10, 26), kind = rng(), seed = randInt(rng, 1, 1e6), bx = x;
     const r = randInt(rng, 3, 5), th = randInt(rng, 2, 4), hh = randInt(rng, 9, 30);
-    const tall = Math.max(0.3, Math.min(1, 1 - (uOf(L, x) - 150) / 800));        // lower towards Richmond
+    const tall = height(uOf(L, x));
     x += w + randInt(rng, 1, 5);
-    if (Math.abs(bx + w / 2 - mcg) < 66 + w / 2 || !ctx.ok(bx)) continue;         // keep the 'G in view
+    if (!ctx.free(bx - 2, bx + w + 2) || !ctx.ok(bx)) continue;
     if (kind < 0.16) ctx.stat(bx - r - 2, bx + r + 1, G + 1, (g, p, lit, ox) => roundTree(g, bx + ox, G + 1, r, th, p, seed));
     else ctx.stat(bx, bx + w, G + 2, (g, p, lit, ox) => cityBlock(g, p, lit, bx + ox, G + 2, w, Math.round(hh * tall) + 4, kind, seed));
   }
@@ -70,9 +72,12 @@ function cityMidGround(c, y, lx) {
 
 // Near ground: a chain-mesh fence, then a street with tram tracks
 function cityFg(ctx) {
-  const { rng, L } = ctx, a = lxOf(L, 440);
-  ctx.live(tramEnt(a, a + 420, 24, rng));
-  ctx.live(tramEnt(a + 150, a + 620, 31, rng));
+  const { rng } = ctx;
+  for (let a = ctx.from + 160; a + 420 < ctx.to; a += randInt(rng, 700, 1000)) {   // trams both ways along the street
+    if (!ctx.ok(a + 200)) continue;
+    ctx.live(tramEnt(a, a + 420, 24, rng));
+    ctx.live(tramEnt(a + 150, a + 620, 31, rng));
+  }
   for (let x = ctx.from + randInt(rng, 0, 60); x < ctx.to; x += randInt(rng, 150, 260)) {
     const len = randInt(rng, 180, 300);
     if (ctx.ok(x + (len >> 1))) ctx.live(carEnt(x, x + len, rng() < 0.5 ? 26 : 33, rng));

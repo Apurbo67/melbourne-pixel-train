@@ -39,9 +39,35 @@ function hash2(x, y) {
 function setupTerrain() {
   const at = a => STATIONS[a[0]].dist + a[1];
   TERRAIN.forEach((s, i) => { s.u = i ? at(s.at) : -Infinity; });
-  BRIDGE.u0 = at(BRIDGE.at);
+  BRIDGE.u0 = BRIDGE.at ? at(BRIDGE.at) : -1e7;
   BRIDGE.u1 = BRIDGE.u0 + BRIDGE.spans * BRIDGE.span;
   for (const c of CROSSINGS) c.u = at(c.at);
+  for (const t of TUNNELS) { t.u0 = at(t.a); t.u1 = at(t.b); }
+}
+
+// Is world position u underground?
+function inTunnel(u) {
+  for (let i = 0; i < TUNNELS.length; i++) if (u >= TUNNELS[i].u0 && u < TUNNELS[i].u1) return true;
+  return false;
+}
+
+// Landmarks and footy ovals are placed by the line, not by a landscape:
+// every layer keeps a list of the stretches they stand on, and spawners
+// leave those clear (ctx.free)
+function placeMarks(L, ctx) {
+  const list = L.key === 'mid' ? LINE.landmarks : L.key === 'far' ? LINE.farmarks : [];
+  for (const [code, du, hw, name] of list) {
+    const st = stn(code), paint = PAINTERS[name];
+    if (!st || !paint) continue;
+    const cx = lxOf(L, st.dist + du), base = L.key === 'mid' ? 36 : 52;
+    ctx.stat(cx - hw, cx + hw, -1, (g, p, lit, ox) => paint(g, p, lit, cx + ox, base));
+    L.keep.push([cx - hw - 4, cx + hw + 4]);
+  }
+  if (L.key === 'mid') for (const [i, px0] of OVALS) {
+    const cx = lxOf(L, STATIONS[i].dist + px0);
+    L.keep.push([cx - 48, cx + 48]);
+    footyOval(ctx, cx, 34, ctx.rng);
+  }
 }
 
 // Sections at world position u: a, b are TERRAIN indices, t the weight of b.
@@ -76,7 +102,11 @@ function buildTerrain() {
   for (const L of TLAYERS) {
     L.lx0 = Math.floor(STATIONS[0].dist * L.f) - 48;
     L.lx1 = Math.ceil(STATIONS[LAST_STATION].dist * L.f) + W + 48;
-    L.statics = []; L.live = []; L.data = {};
+    L.statics = []; L.live = []; L.data = {}; L.keep = [];
+    const stat = (x0, x1, z, draw) => L.statics.push({ x0, x1, z, draw });   // baked into the chunks
+    const live = e => L.live.push(e);                                        // drawn every frame
+    const free = (a, b) => !L.keep.some(([k0, k1]) => b > k0 && a < k1);
+    placeMarks(L, { L, rng: mulberry32(L.seed * 7 + 3), stat, live, free });
     TERRAIN.forEach((s, i) => {
       const spec = SECTIONS[s.id][L.key];
       const from = i ? Math.max(L.lx0, lxOf(L, s.u - half)) : L.lx0;
@@ -84,11 +114,9 @@ function buildTerrain() {
       if (!spec || from >= to) return;
       const rng = mulberry32(L.seed * 1000 + i * 97);
       const weight = lx => sectionWeight(s.id, uOf(L, lx));
-      L.data[s.id] = (spec.spawn && spec.spawn({
-        L, rng, from, to, weight,
+      L.data[i] = (spec.spawn && spec.spawn({                              // by index: a landscape can come twice
+        L, rng, from, to, weight, stat, live, free,
         ok: lx => rng() < weight(lx),
-        stat: (x0, x1, z, draw) => L.statics.push({ x0, x1, z, draw }),   // baked into the chunks
-        live: e => L.live.push(e),                                          // drawn every frame
       })) || {};
     });
     L.statics.sort((a, b) => a.z - b.z);
@@ -101,7 +129,7 @@ function buildTerrain() {
 function groundCol(L, si, lx) {
   const id = TERRAIN[si].id, spec = SECTIONS[id][L.key];
   if (!spec || !spec.ground) return null;
-  return { spec, c: spec.column ? spec.column(lx, L.data[id], uOf(L, lx)) : null };
+  return { spec, c: spec.column ? spec.column(lx, L.data[si], uOf(L, lx)) : null };
 }
 
 function terrainChunk(v, L, k) {

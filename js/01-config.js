@@ -38,18 +38,18 @@ const CONFIG = {
     ON_TIME: 8,                         // game minutes either side that count as on time
   },
 
-  // the light follows the trip - a bright afternoon at Flinders Street,
-  // golden hour through the suburbs, dark by Belgrave - squeezing a whole
-  // winter evening into the run; the clock on the driver's desk shows the
-  // real 72 minutes instead
-  HOUR_START: 12.8, HOUR_END: 20.0,
-  CLOCK_START: 16 + 21 / 60, CLOCK_END: 17 + 33 / 60,
+  // the light follows the trip - a bright afternoon in the city, golden
+  // hour through the suburbs, dark at the end of the line - squeezing a
+  // whole winter evening into the run; the clock on the driver's desk
+  // shows the line's real timetable instead (LINE.clock)
+  HOUR_START: LINE.hours[0], HOUR_END: LINE.hours[1],
+  CLOCK_START: LINE.clock[0], CLOCK_END: LINE.clock[1],
   HOUR_EASE: 3,                         // max game hours per second when time jumps (skip, T)
 
   // weather: four seasons in one day - passing showers (seeded, so every trip gets the same ones)
-  RAIN_GAP: [35, 80],                   // s of dry weather between spells
-  RAIN_SPELL: [14, 28],                 // s a spell lasts
-  LIGHTNING_RATE: 0.03,                 // strikes per second while it pours
+  // (each trip draws a kind of day from WEATHER_DAYS in 19-atmosphere.js;
+  // ?seed=N in the address fixes the draw, which the tests rely on)
+  LIGHTNING_RATE: 0.03,                 // strikes per second while a storm pours
 
   TRAIN_FRONT_X: 273,                   // screen x of the headlight
   LOCO_W: 46, CAR_W: 39, CAR_GAP: 2, CAR_COUNT: 5,
