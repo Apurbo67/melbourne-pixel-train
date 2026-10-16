@@ -36,6 +36,8 @@ function makeDesign(rng, kind, kinds = PASSENGER_KINDS) {
                     d.long = rng() < 0.4; d.bare = rng() < 0.2; d.shoe = rng() < 0.5 ? 'white' : 'ink';
                     if (rng() < 0.15) { d.head = pick(rng, ['navy', 'red', 'ink', 'white']); d.peak = true; }
                     carry([['backpack', 0.25], ['bag', 0.2], ['coffee', 0.15], ['phone', 0.12]]); break;
+    case 'traveller': d.top = pick(rng, SHIRTS); d.bottom = pick(rng, ['blue', 'navy', 'ink', 'tan']); d.long = rng() < 0.5;   // off to the airport bus, or the country
+                    d.shoe = rng() < 0.5 ? 'white' : 'ink'; d.carry = rng() < 0.7 ? 'suitcase' : 'backpack'; break;
     case 'student': d.top = pick(rng, ['red', 'navy', 'grayLight', 'ink', 'green', 'purple', 'white']); d.bottom = pick(rng, ['blue', 'ink', 'navy']);
                     d.long = rng() < 0.5; d.shoe = 'white'; d.carry = 'backpack'; break;
     case 'dress':   d.top = pick(rng, ['rose', 'red', 'skyMid', 'purple', 'glow', 'green', 'ink', 'white', 'orange']);
@@ -58,6 +60,7 @@ function makeDesign(rng, kind, kinds = PASSENGER_KINDS) {
                     d.top = d.girl ? pick(rng, ['rose', 'red', 'glow', 'skyMid', 'purple']) : pick(rng, SHIRTS); break;
     case 'elder':   d.hair = 'white'; d.top = pick(rng, ['cream', 'grayLight', 'rose', 'haze', 'tan']); d.bottom = pick(rng, ['grayDark', 'navy', 'brown']);
                     d.beard = rng() < 0.3; d.shoe = 'brownDark'; d.toe = false; break;
+    case 'pso':     d.top = 'navy'; d.bottom = 'navy'; d.head = 'navy'; d.peak = true; d.shirt = 'glow'; break;   // Protective Services Officer, badge on the chest
     case 'staff':   d.top = 'orange'; d.top2 = 'navy'; d.bottom = 'navy'; d.head = 'navy'; d.peak = true; break;   // hi-vis over navy
     case 'busker':  d.top = pick(rng, ['red', 'ink', 'green', 'purple']); d.bottom = 'ink'; d.long = true; d.carry = 'guitar';
                     if (rng() < 0.5) { d.head = 'brown'; d.peak = true; }
@@ -145,6 +148,7 @@ function paintPerson(g, d, p, frame) {
   switch (d.carry) {
     case 'bag':      R(4, 7, 2, 2, d.bagColor); P(4, 6, s); break;
     case 'backpack': R(0, 3, 1, 4, d.bagColor); P(hand[0], hand[1], s); break;
+    case 'suitcase': R(5, 7, 3, 4, d.bagColor); P(5, 6, 'grayDark'); P(4, 6, s); P(6, 11, 'ink'); break;   // wheeled along behind
     case 'coffee':   P(4, 5, s); P(4, 4, 'white'); break;                  // takeaway cup
     case 'phone':    P(4, 4, s); P(4, 3, 'ink'); break;                    // eyes on the phone
     case 'guitar':   R(2, 6, 3, 2, 'amber'); P(3, 6, 'brownDark'); P(1, 5, 'brown'); P(0, 4, 'brown'); P(0, 5, s);
@@ -181,6 +185,7 @@ function personSprite(v, d, frame, dir) {
 }
 
 function personFrame(q) {
+  if (q.mode === 'dance') return Math.floor(q.t * 4) & 1 ? 1 : 3;
   if (q.walking) return Math.floor(q.anim) % 4;
   if (q.mode === 'sit') return 4;
   if (q.mode === 'sip') return q.t % 3.4 > 2.3 ? 6 : 5;
@@ -191,8 +196,12 @@ function personFrame(q) {
 }
 
 function drawPersonAt(g, v, q, off) {
+  if (q.mode === 'dance' && Math.floor(q.t * 3) % 4 === 0) q.dir = Math.floor(q.t * 1.3) & 1 ? 1 : -1;   // twirl now and then
   const spr = personSprite(v, q.d, personFrame(q), q.dir);
-  const x = Math.round(q.x) + off - PERSON_CX, y = Math.round(q.y) - PERSON_FY;
+  const hop = q.mode === 'dance' ? (Math.floor(q.t * 4) & 1) : q.mode === 'argue' && q.bubble ? (Math.floor(q.t * 6) & 1) : 0;
+  const x = Math.round(q.x) + off - PERSON_CX, y = Math.round(q.y) - PERSON_FY - hop;
+  if (!q.hidden) drawPersonExtras(g, v, q, x + PERSON_CX, Math.round(q.y) - hop);
+  if (q.bubble && !q.hidden) BUBBLES.push(q, x + PERSON_CX, y);          // drawn over everything, after the station
   if (q.clip === null) { g.drawImage(spr, x, y); return; }
   // stepping through a doorway: only the part inside the door column shows
   g.save();
@@ -201,6 +210,52 @@ function drawPersonAt(g, v, q, off) {
   g.clip();
   g.drawImage(spr, x, y);
   g.restore();
+}
+
+// What some people are up to, drawn around them (cx: their centre, fy: their feet)
+function drawPersonExtras(g, v, q, cx, fy) {
+  const p = v.p, d = q.d, top = fy - d.h + 1, skin = p[d.skin];
+  switch (q.mode) {
+    case 'selfie': {                                     // phone up at arm's length, a flash now and then
+      const hx = cx + q.dir * 4, hy = top - 1;
+      g.fillStyle = skin; g.fillRect(hx - q.dir, top + 3, 1, 1); g.fillRect(hx, hy + 1, 1, 1);
+      g.fillStyle = p.ink; g.fillRect(hx, hy - 1, 1, 2);
+      if (q.t % 3.2 < 0.12) { g.fillStyle = PALETTE.white; g.fillRect(hx - 1, hy - 2, 3, 3); addLight(hx, hy, LIGHT_BULB); }
+      break;
+    }
+    case 'wave': {                                       // waving at the train as it comes in or pulls out
+      const near = Math.abs(STATIONS[q.st].dist - sim.dist) < 420 && (sim.speed > 1 || (sim.state === 'STOPPED' && sim.station === q.st));
+      if (!near) break;
+      const up = Math.floor(q.t * 5) & 1;
+      g.fillStyle = skin;
+      g.fillRect(cx + 2, top + 2, 1, 1); g.fillRect(cx + 3 + up, top, 1, 2);
+      break;
+    }
+    case 'argue':                                        // dust kicked up by the shove
+      if (q.role === 1 && q.fight.dust > 0) {
+        g.fillStyle = p.cloudShade;
+        for (let i = 0; i < 4; i++) g.fillRect(cx - 4 - i * 2, fy - (i & 1) - Math.round((0.5 - q.fight.dust) * 6), 1, 1);
+      }
+      break;
+  }
+  if (q.runner && q.walking && !q.hidden) {             // speed lines behind a runner
+    g.fillStyle = p.cloudShade;
+    for (const dy of [3, 6]) g.fillRect(cx - q.dir * (5 + (dy & 2)), fy - d.h + dy, 2, 1);
+  }
+}
+
+// Speech bubbles over people's heads, queued while the platform is drawn
+const BUBBLES = [];
+function drawBubbles(g) {
+  for (let i = 0; i < BUBBLES.length; i += 3) drawBubble(g, BUBBLES[i], BUBBLES[i + 1], BUBBLES[i + 2]);
+  BUBBLES.length = 0;
+}
+function drawBubble(g, q, cx, y) {
+  const w = textWidth(q.bubble) + 4, bx = Math.max(1, Math.min(W - w - 1, cx - (w >> 1))), by = y - 3;
+  g.fillStyle = PALETTE.ink; g.fillRect(bx - 1, by - 1, w + 2, 9);
+  g.fillStyle = PALETTE.white; g.fillRect(bx, by, w, 7);
+  g.fillRect(cx, by + 7, 1, 1);
+  drawText(g, q.bubble, bx + 2, by + 1, q.mode === 'argue' || q.bubble === 'HEY!' ? PALETTE.red : q.d.kind === 'pso' ? PALETTE.navy : PALETTE.ink);
 }
 
 // --- behaviour ---------------------------------------------------------
@@ -241,6 +296,90 @@ function populateStation(st) {
   pacer.bx = Math.min(R - 46, 440);
   spawnPerson(st, makeDesign(rng, 'staff'), 14, 167, 1, 'guard');   // platform staff, out by the yellow line
   if (st.extras.includes('busker')) spawnPerson(st, makeDesign(rng, 'busker'), 204, 169, -1, 'busk');
+  platformLife(st, rng, kinds);
+}
+
+// --- a bit of life on the platform: something different every trip --------
+function platformLife(st, rng, kinds) {
+  const [L, R] = st.platform, xIn = (a, b) => Math.max(L + 12, Math.min(R - 12, a + rng() * (b - a)));
+  if (st.extras.includes('busker'))                     // a couple dancing to the busker
+    for (let i = rng() < 0.7 ? 2 : 0; i > 0; i--) spawnPerson(st, makeDesign(rng, pick(rng, ['casual', 'dress', 'student'])), 184 - i * 9, 168, i & 1 ? 1 : -1, 'dance');
+  if (rng() < 0.5) {                                    // someone taking a selfie
+    const q = spawnPerson(st, makeDesign(rng, pick(rng, ['casual', 'student', 'dress', 'traveller'])), xIn(30, 250), randWalkY(rng), rng() < 0.5 ? 1 : -1, 'selfie');
+    q.d.carry = null;
+  }
+  if (rng() < 0.4) {                                    // a kid racing up and down, a parent keeping an eye out
+    const x = xIn(40, 220), kid = spawnPerson(st, makeDesign(rng, 'child'), x, PLAT.WALK_MAX - 2, 1, 'chase');
+    kid.ax = x - 30; kid.bx = x + 30; kid.speed = 24;
+    spawnPerson(st, makeDesign(rng, pick(rng, ['casual', 'office', 'hijab', 'dress'])), x + 6, PLAT.WALK_MAX - 6, -1, 'idle');
+  }
+  if (rng() < 0.45) spawnPerson(st, makeDesign(rng, pick(rng, ['child', 'elder', 'casual'])), xIn(20, 260), randWalkY(rng), 1, 'wave');   // waves at the train
+  if (rng() < 0.3) startScuffle(st, rng, kinds);        // and now and then, words are had
+}
+
+// Two people fall out: they argue, maybe one shoves the other, a PSO walks
+// over, and then they either go their separate ways or make up
+function startScuffle(st, rng, kinds = PASSENGER_KINDS) {
+  const x = Math.max(st.platform[0] + 20, Math.min(st.platform[1] - 30, 40 + rng() * 180)), y = randWalkY(rng);
+  const adult = () => { const d = makeDesign(rng, pick(rng, kinds.filter(k => k !== 'child' && k !== 'elder').concat('casual'))); if (d.carry === 'coffee') d.carry = null; return d; };
+  const a = spawnPerson(st, adult(), x, y, 1, 'argue'), b = spawnPerson(st, adult(), x + 9, y, -1, 'argue');
+  const f = { a, b, st, t: -(3 + rng() * 9), shove: rng() < 0.6, makeUp: rng() < 0.45, pso: null, said: 0, dust: 0, done: false };
+  a.fight = b.fight = f; a.role = 0; b.role = 1;
+  return f;
+}
+
+const ANGRY = ['!', '?!', '#@$!', '!!', 'OI', 'WHAT?', '#$!'];
+function bubble(q, text, life = 1.2) { q.bubble = text; q.bubbleT = life; }
+
+function updateScuffle(f, dt) {
+  if (f.done) return;
+  const { a, b } = f;
+  f.t += dt; f.dust = Math.max(0, f.dust - dt);
+  if (f.t < 0) return;                                  // just two people standing about, for now
+  if (!f.pso) {
+    if (f.t > f.said) {                                 // taking turns to have a go at each other
+      const q = Math.floor(f.said / 0.9) & 1 ? b : a;
+      bubble(q, pick(Math.random, ANGRY), 0.8);
+      f.said += 0.9;
+    }
+    if (f.shove && f.t > 4 && !f.shoved) {              // a shove: one steps in, the other stumbles back
+      f.shoved = true; f.dust = 0.5;
+      a.x += 3;
+      b.path = [{ x: b.x + 7, y: b.y, speed: 45 }];
+      bubble(b, 'HEY!', 1.2);
+    }
+    if (f.t > 5.5) {                                    // a PSO on the platform comes over
+      const fromLeft = a.x > 150, sx = fromLeft ? Math.min(-20, a.x - 140) : Math.max(W + 20, b.x + 140);
+      f.pso = spawnPerson(f.st, makeDesign(Math.random, 'pso'), sx, Math.min(PLAT.WALK_MAX, a.y + 3), fromLeft ? 1 : -1, 'pso');
+      f.pso.speed = 17;
+      f.pso.path = [{ x: fromLeft ? a.x - 8 : b.x + 8, y: Math.min(PLAT.WALK_MAX, a.y + 3), then: q => { bubble(q, 'OI! BREAK IT UP', 1.6); f.arrived = f.t; } }];
+    }
+    return;
+  }
+  if (f.arrived === undefined || f.t < f.arrived + 1.8) return;
+  f.done = true;
+  if (f.makeUp) {                                       // shake hands and get on with the day
+    bubble(a, 'SORRY', 1.4); bubble(b, 'ALL GOOD', 1.4);
+    a.mode = b.mode = 'idle'; a.dir = 1; b.dir = -1;
+  } else {                                              // or walk off in opposite directions
+    bubble(b, 'WHATEVER', 1.2);
+    a.mode = b.mode = 'leave';
+    a.path = [{ x: a.x - 360, y: a.y, then: gone }];
+    b.path = [{ x: b.x + 360, y: b.y, then: gone }];
+    b.delay = 0.6;
+  }
+  const p = f.pso;                                      // the PSO stays and keeps an eye on things
+  p.mode = 'patrol'; p.ax = Math.max(f.st.platform[0] + 20, p.x - 60); p.bx = Math.min(f.st.platform[1] - 20, p.x + 60);
+  p.delay = 2;
+}
+
+// Late! Someone sprints for the doors while the others board
+function lateRunner(st, o) {
+  const fromLeft = Math.random() < 0.6, door = (fromLeft ? DOORS[0] : DOORS[DOORS.length - 1]) + o, x = door + 2;
+  const q = spawnPerson(st, makeDesign(Math.random, pick(Math.random, ['office', 'student', 'casual', 'traveller'])), fromLeft ? -24 + o : W + 24 + o, PLAT.WALK_MAX - 3, fromLeft ? 1 : -1, 'board');
+  q.hidden = true; q.delay = 1.2 + Math.random() * 2; q.speed = 34; q.runner = true;
+  q.path = [{ x, y: PLAT.EDGE_Y + 2, then: r => bubble(r, 'HOLD THE DOOR!', 1) }, { x, y: PLAT.DOOR_FLOOR, clip: door, speed: 18, then: passengerIn }];
+  bubble(q, 'WAIT!', q.delay + 1.8);
 }
 
 
@@ -261,6 +400,7 @@ function startBoarding(st) {
               { x: x + Math.sign(exit - x) * 4, y },
               { x: exit, y, then: gone }];
   }
+  if (!terminus && Math.random() < 0.35) lateRunner(st, o);
   for (const q of sim.people) {
     if (q.st !== st.index) continue;
     if (q.mode === 'wait') {
@@ -313,12 +453,24 @@ function updatePerson(q, dt) {
       q.path = [{ x: q.x < (q.ax + q.bx) / 2 ? q.bx : q.ax, y: q.y }];
       q.delay = 1 + Math.random() * 2;
       break;
+    case 'chase':                                        // a kid running back and forth, giggling
+      q.path = [{ x: q.x < (q.ax + q.bx) / 2 ? q.bx : q.ax, y: q.y }];
+      q.delay = 0.2 + Math.random() * 0.6;
+      if (Math.random() < 0.3) bubble(q, pick(Math.random, ['HEHE', 'WHEE!', 'HAHA']), 0.9);
+      break;
+    case 'argue':
+      if (q.fight) q.dir = q.role ? -1 : 1;                // face each other
+      break;
   }
 }
 
 function updatePeople(dt) {
   for (const st of STATIONS)
     if (!sim.populated.has(st.index) && Math.abs(st.dist - sim.dist) < 1000) populateStation(st);
+  for (const q of sim.people) {
+    if (q.fight && q.role === 0) updateScuffle(q.fight, dt);
+    if (q.bubbleT > 0 && (q.bubbleT -= dt) <= 0) q.bubble = null;
+  }
   for (const q of sim.people) updatePerson(q, dt);
   let n = 0;
   for (const q of sim.people) {
