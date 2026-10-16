@@ -11,9 +11,14 @@ const base = require('@playwright/test');
 class Game {
   constructor(page) { this.page = page; }
 
-  /** Load the game ('' for the title card, '#watch' or '#drive' to deep-link) and wait until it has started. */
-  async open(hash = '') {
-    await this.page.goto('./' + hash);
+  /**
+   * Load the game ('' for the title card, '#watch' or '#drive' to deep-link, '?line=...' for a line)
+   * and wait until it has started. The weather is random on every trip, so tests fix it with a seed.
+   */
+  async open(where = '', seed = 7) {
+    const [path, hash = ''] = where.split('#');
+    const query = (path.startsWith('?') ? path + '&' : '?') + 'seed=' + seed;
+    await this.page.goto('./' + query + (hash ? '#' + hash : ''));
     await this.page.waitForFunction(() => typeof VARIANTS !== 'undefined' && typeof sim !== 'undefined');
   }
 
@@ -81,4 +86,4 @@ exports.LINE = [
   ['BOX', 'BOX HILL'], ['RWD', 'RINGWOOD'], ['BOR', 'BORONIA'], ['UFG', 'UPPER FERNTREE GULLY'], ['BEG', 'BELGRAVE'],
 ];
 exports.AUTO_BUTTONS = ['mode', 'pause', 'speed', 'skip', 'time', 'rain', 'mute'];
-exports.DRIVE_BUTTONS = ['mode', 'engine', 'power', 'brake', 'doors', 'horn', 'light', 'pause', 'mute'];
+exports.DRIVE_BUTTONS = ['mode', 'engine', 'power', 'brake', 'doors', 'horn', 'light', 'pause', 'mute', 'lines'];
