@@ -17,7 +17,7 @@ function updateUI(dt) {
   if (show) ui.bannerSt = next;                           // latched while it slides out
   if (show && sim.nextStop - sim.dist < 640) announceArrival(next);
   // slides out under the route map (under the driver's panels in DRIVE)
-  ui.bannerY += ((show ? (drive.on ? 50 : 19) : -40) - ui.bannerY) * Math.min(1, dt * 5);
+  ui.bannerY += ((show ? (drive.on ? 50 : 28) : -40) - ui.bannerY) * Math.min(1, dt * 5);
   ui.panelY += ((ui.complete ? (drive.final ? 24 : 44) : -150) - ui.panelY) * Math.min(1, dt * 4);
 }
 
@@ -316,7 +316,7 @@ function drawDriveHUD(g) {
 function drawHint(g) {
   const s = driveHint();
   if (!s) return;
-  const w = textWidth(s) + 8, x = (W - w) >> 1, y = 20;
+  const w = textWidth(s) + 8, x = (W - w) >> 1, y = 28;
   hudBox(g, x, y, w, 11);
   drawText(g, s, x + 4, y + 3, PALETTE.glow);
 }

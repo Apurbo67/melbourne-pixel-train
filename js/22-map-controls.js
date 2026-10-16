@@ -2,41 +2,50 @@
 'use strict';
 
 // --- route map: the whole line, coloured by landscape, with a little train -
-const MAP = { x: 0, y: 2, w: Math.max(150, STATIONS.length * 17), sprite: null };
+// It sits on a dark panel narrow enough to fit between the driver's two
+// panels; the station codes go on two staggered rows so a long line fits.
+const MAP = { x: 0, y: 2, w: 146, h: 23, sprite: null };
+const mapX = i => 6 + Math.round((STATIONS[i].dist - STATIONS[0].dist) / (STATIONS[LAST_STATION].dist - STATIONS[0].dist) * MAP.w);
+const labelX = (i, s) => Math.max(1, Math.min(MAP.w + 12 - textWidth(s) - 1, mapX(i) - (textWidth(s) >> 1)));
+const labelY = i => i & 1 ? 15 : 9;
 function buildMap() {
-  const w = MAP.w = Math.max(150, STATIONS.length * 17), h = 15, [c, g] = makeCanvas(w + 12, h);
+  const w = MAP.w, [c, g] = makeCanvas(w + 12, MAP.h);
   const d0 = STATIONS[0].dist, d1 = STATIONS[LAST_STATION].dist;
   const SEC_COL = { city: PALETTE.grayLight, cbd: PALETTE.grayLight, inner: PALETTE.gray, yarra: PALETTE.skyMid, suburbs: PALETTE.orange,
                     foothills: PALETTE.paddy, forest: PALETTE.green, industrial: PALETTE.rust, plains: PALETTE.tan, bay: PALETTE.skyDeep,
                     skyrail: PALETTE.cloudShade };
-  rect(g, 0, 0, w + 12, 9, PALETTE.slate);
-  rect(g, 1, 1, w + 10, 7, PALETTE.ink);
+  rect(g, 0, 0, w + 12, MAP.h, PALETTE.slate);
+  rect(g, 1, 1, w + 10, MAP.h - 2, PALETTE.ink);
+  rect(g, 1, 1, w + 10, 1, LINE.color);                                   // the line's own colour along the top
   for (let i = 0; i <= w; i++) {
     const u = d0 + (d1 - d0) * i / w, tw = terrainAt(u);
-    rect(g, 6 + i, 4, 1, 1, inTunnel(u) ? PALETTE.slate : SEC_COL[TERRAIN[bayer(i, 4) < tw.t * 16 ? tw.b : tw.a].id]);   // underground in slate
+    rect(g, 6 + i, 4, 1, 2, inTunnel(u) ? PALETTE.slate : SEC_COL[TERRAIN[bayer(i, 4) < tw.t * 16 ? tw.b : tw.a].id]);   // underground in slate
   }
-  for (const st of STATIONS) {
-    const x = 6 + Math.round((st.dist - d0) / (d1 - d0) * w);
-    rect(g, x - 1, 3, 3, 3, PALETTE.white);
-    drawText(g, st.code || st.en.slice(0, 3), Math.max(0, Math.min(w + 12 - 11, x - 5)), 10, PALETTE.grayLight);
-  }
+  STATIONS.forEach((st, i) => {
+    const x = mapX(i), s = st.code || st.en.slice(0, 3);
+    rect(g, x - 1, 3, 3, 4, PALETTE.white);
+    rect(g, x, 7, 1, labelY(i) - 8, PALETTE.slate);                        // a tick down to its code
+    drawText(g, s, labelX(i, s), labelY(i), PALETTE.grayLight);
+  });
   MAP.x = (W - w - 12) >> 1;
   MAP.sprite = c;
 }
 
 function drawMap(g) {
   if (!MAP.sprite) buildMap();
-  const d0 = STATIONS[0].dist, d1 = STATIONS[LAST_STATION].dist, ox = MAP.x + 6, oy = MAP.y;
-  g.drawImage(MAP.sprite, MAP.x, oy);
-  for (let i = 0; i <= LAST_STATION; i++) {              // stations reached glow, the next one blinks
-    const x = ox + Math.round((STATIONS[i].dist - d0) / (d1 - d0) * MAP.w);
-    const next = i === sim.station + (sim.state === 'STOPPED' ? 0 : 1);
-    if (i <= sim.station || (next && Math.floor(sim.clock * 3) & 1)) { g.fillStyle = PALETTE.glow; g.fillRect(x, oy + 4, 1, 1); }
+  const d0 = STATIONS[0].dist, d1 = STATIONS[LAST_STATION].dist, ox = MAP.x, oy = MAP.y, blink = Math.floor(sim.clock * 3) & 1;
+  g.drawImage(MAP.sprite, ox, oy);
+  for (let i = 0; i <= LAST_STATION; i++) {              // stations reached light up, the next one blinks
+    const next = i === sim.station + (sim.state === 'STOPPED' ? 0 : 1), done = i <= sim.station, s = STATIONS[i].code;
+    if (!done && !next) continue;
+    const here = i === sim.station && sim.state === 'STOPPED';
+    if (done || blink) { g.fillStyle = PALETTE.glow; g.fillRect(ox + mapX(i), oy + 4, 1, 2); }
+    drawText(g, s, ox + labelX(i, s), oy + labelY(i), here || (next && blink) ? PALETTE.glow : PALETTE.white);
   }
-  const tx = ox + Math.round((sim.dist - d0) / (d1 - d0) * MAP.w);
-  g.fillStyle = PALETTE[STYLE.map[0]]; g.fillRect(tx - 5, oy + 2, 6, 2);   // the set, in its livery
-  g.fillStyle = PALETTE[STYLE.map[1]]; g.fillRect(tx, oy + 1, 2, 3);       // cab end
-  g.fillStyle = PALETTE.glow;  g.fillRect(tx + 2, oy + 2, 1, 1);       // headlight
+  const tx = ox + 6 + Math.round((sim.dist - d0) / (d1 - d0) * MAP.w);
+  g.fillStyle = PALETTE[STYLE.map[0]]; g.fillRect(tx - 5, oy + 3, 6, 2);   // the set, in its livery
+  g.fillStyle = PALETTE[STYLE.map[1]]; g.fillRect(tx, oy + 2, 2, 3);       // cab end
+  g.fillStyle = PALETTE.glow;  g.fillRect(tx + 2, oy + 3, 1, 1);           // headlight
 }
 
 // --- controls: toolbar buttons and keys --------------------------------------
