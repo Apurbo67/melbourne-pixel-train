@@ -15,6 +15,7 @@ function rangeFar(ctx) {
     const w = randInt(rng, 80, 150), h = randInt(rng, 5, 11), tx = x;
     if (ctx.ok(x + (w >> 1))) ctx.stat(tx, tx + w, -1, (g, p, lit, ox) => hump(g, tx + ox, 53, w, h, p.greenDark, p.green));
   }
+  if (!stn('BOR')) return;                                // (other lines' hills have no TV masts)
   const tv = lxOf(L, stn('BOR').dist + 260), W0 = 300, H0 = 38, top = 53 - H0;   // Mount Dandenong, behind Boronia
   ctx.stat(tv - W0 / 2, tv + W0 / 2, -3, (g, p, lit, ox) => {
     hump(g, tv - W0 / 2 + ox, 53, W0, H0, p.haze, null, p.skyMid);
@@ -28,7 +29,7 @@ function rangeFar(ctx) {
 
 // Mid layer: rolling paddocks behind post-and-wire fences, roos on the
 // slopes, gums and golden wattle, a farmhouse with its tank
-const stepsAt = L => lxOf(L, stn('UFG').dist - 168);    // where the 1000 Steps stand (the forest section draws them)
+const stepsAt = L => stn('UFG') ? lxOf(L, stn('UFG').dist - 168) : -1e9;    // where the 1000 Steps stand (the forest section draws them)
 function paddockMid(ctx) {
   const { rng, L } = ctx, steps = stepsAt(L);
   for (let x = ctx.from - 100; x < ctx.to; x += randInt(rng, 90, 170)) {
@@ -170,11 +171,13 @@ function forestFar(ctx) {
 // Mid layer: mountain ash, straight and enormously tall, tree ferns under
 // them, a creek down a gully; and Puffing Billy in steam at Belgrave
 function forestMid(ctx) {
-  const { rng, L } = ctx, billy = lxOf(L, STATIONS[LAST_STATION].dist) + 8;
+  const { rng, L } = ctx, billy = lxOf(L, (stn('BEG') || STATIONS[LAST_STATION]).dist) + 8;   // at Belgrave, whichever way
   const steps = stepsAt(L);
   const nearBilly = x => (x > billy - 12 && x < billy + 86) || Math.abs(x - steps) < 60;
-  ctx.stat(steps - 58, steps + 58, 90, (g, p, lit, ox) => paintSteps(g, p, lit, steps + ox, 36));    // in front of everything else here
-  ctx.live(hikersEnt(steps, 36, rng));
+  if (stn('UFG')) {
+    ctx.stat(steps - 58, steps + 58, 90, (g, p, lit, ox) => paintSteps(g, p, lit, steps + ox, 36));    // in front of everything else here
+    ctx.live(hikersEnt(steps, 36, rng));
+  }
   for (let x = ctx.from - 80; x < ctx.to; x += randInt(rng, 70, 140)) {
     const w = randInt(rng, 110, 200), h = randInt(rng, 7, 14), x0 = x, seed = randInt(rng, 1, 1e6);
     const stream = rng() < 0.5 ? streamPath(rng, w, h) : null;
@@ -190,8 +193,10 @@ function forestMid(ctx) {
     const y = randInt(rng, 36, 39), h = randInt(rng, 3, 8);
     if (ctx.ok(x) && !nearBilly(x)) ctx.live(swayer(L, x, y, 'treefern', h));
   }
-  ctx.stat(billy - 4, billy + 80, 36, (g, p, lit, ox) => paintBilly(g, p, lit, billy + ox, 36));
-  ctx.live(billySteamEnt(billy + 69, 23));
+  if (stn('BEG')) {
+    ctx.stat(billy - 4, billy + 80, 36, (g, p, lit, ox) => paintBilly(g, p, lit, billy + ox, 36));
+    ctx.live(billySteamEnt(billy + 69, 23));
+  }
   fogBands({ ...ctx, ok: x => ctx.ok(x) && Math.abs(x - steps) > 140 && Math.abs(x - billy - 36) > 140 }, 6, 28, 46, 7);   // mist keeps off the signs
 }
 
